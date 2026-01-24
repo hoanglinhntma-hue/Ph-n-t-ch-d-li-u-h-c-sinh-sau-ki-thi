@@ -10,8 +10,10 @@ export enum StudentClassification {
   TOT = 'Học sinh TỐT',
   TIEM_CAN_TOT = 'Tiệm cận TỐT',
   KHA = 'Học sinh KHÁ',
+  TIEM_CAN_KHA = 'Tiệm cận KHÁ',
   DAT = 'Học sinh ĐẠT',
-  NGUY_CO = 'Nguy cơ (Dưới 5.0)',
+  TIEM_CAN_DAT = 'Tiệm cận ĐẠT',
+  CHUA_DAT = 'CHƯA ĐẠT',
 }
 
 export interface SubjectScore {
@@ -44,6 +46,8 @@ export interface ClassStats {
   totCount: number;
   tiemCanTotCount: number;
   khaCount: number;
+  tiemCanKhaCount: number;
   datCount: number;
-  nguyCoCount: number;
+  tiemCanDatCount: number;
+  chuaDatCount: number;
 }
