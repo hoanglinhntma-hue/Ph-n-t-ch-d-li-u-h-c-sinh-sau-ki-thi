@@ -127,19 +127,19 @@ const App: React.FC = () => {
 
     reader.onload = (evt) => {
       try {
-        const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: 'binary' });
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
         
         let newProcessedStudents: StudentData[] = [];
         let newSubjectHeaders: Set<string> = new Set();
 
         wb.SheetNames.forEach(wsname => {
           const ws = wb.Sheets[wsname];
-          const data = XLSX.utils.sheet_to_json<any>(ws, { blankrows: false });
+          const jsonData = XLSX.utils.sheet_to_json<any>(ws, { blankrows: false });
 
-          if (data.length === 0) return;
+          if (jsonData.length === 0) return;
 
-          const allHeaders = Object.keys(data[0]);
+          const allHeaders = Object.keys(jsonData[0]);
           const nameKey = allHeaders.find(h => {
             const l = h.trim().toLowerCase();
             return ['họ tên', 'họ và tên', 'tên', 'name'].includes(l) || (l.includes('họ') && l.includes('tên'));
@@ -155,7 +155,7 @@ const App: React.FC = () => {
           const subjectHeaders = allHeaders.filter(h => ![sttKey, nameKey, classKey].includes(h));
           subjectHeaders.forEach(h => newSubjectHeaders.add(h));
 
-          const processed = data.map(item => {
+          const processed = jsonData.map(item => {
             if (!item[classKey]) item[classKey] = wsname;
             return processRawStudentData(item, subjectHeaders, { nameKey, classKey, sttKey });
           }).filter((s): s is StudentData => s !== null);
@@ -176,7 +176,7 @@ const App: React.FC = () => {
         e.target.value = ''; 
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const loadAiAdvice = async () => {
@@ -255,7 +255,7 @@ const App: React.FC = () => {
         return base;
       });
       const wsClass = XLSX.utils.json_to_sheet(classData);
-      XLSX.utils.book_append_sheet(wb, wsClass, `Kết quả lớp ${activeTab}`);
+      XLSX.utils.book_append_sheet(wb, wsClass, `Ket_qua_lop_${activeTab}`);
 
       const goalsData = studentsInClass.flatMap(s => s.goals.map(g => ({
         'Học sinh': s.name,
@@ -266,7 +266,7 @@ const App: React.FC = () => {
         'Lộ trình': g.description
       })));
       const wsGoals = XLSX.utils.json_to_sheet(goalsData);
-      XLSX.utils.book_append_sheet(wb, wsGoals, "Mục tiêu tiến bộ");
+      XLSX.utils.book_append_sheet(wb, wsGoals, "Muc_tieu_tien_bo");
 
       XLSX.writeFile(wb, `Ket_qua_lop_${activeTab.replace(/\s/g, '_')}.xlsx`);
     }
@@ -335,19 +335,20 @@ const App: React.FC = () => {
     }
   };
 
-  // Font 14pt cho báo cáo chung
+  // Styles cho báo cáo sư phạm
   const reportStyle: React.CSSProperties = {
     fontFamily: "'Times New Roman', Times, serif",
     fontSize: "14pt"
   };
 
-  // Font 16pt cho mục Hồ sơ năng lực
+  // Styles cho hồ sơ năng lực (16pt)
   const profileSectionStyle: React.CSSProperties = {
+    fontFamily: "'Times New Roman', Times, serif",
     fontSize: "16pt"
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-slate-50 flex flex-col" translate="no">
       <header className="bg-white border-b sticky top-0 z-50 no-print">
         <div className="max-w-[1600px] mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -486,7 +487,7 @@ const App: React.FC = () => {
               </label>
             </div>
           ) : (
-            <div className="space-y-8 animate-in fade-in duration-500" ref={reportRef} style={reportStyle}>
+            <div className="space-y-8 animate-in fade-in duration-500 pedagogical-report" ref={reportRef} style={reportStyle}>
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 text-indigo-600 mb-1">
