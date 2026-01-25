@@ -33,7 +33,8 @@ import {
   Lightbulb,
   AlertCircle,
   WifiOff,
-  Cpu
+  Cpu,
+  User
 } from 'lucide-react';
 import { StudentData, ClassStats, StudentClassification, SubjectScore } from './types';
 import { processRawStudentData, calculateClassificationAndGoals, getSubjectLevel, getRadarData } from './gradingService';
@@ -65,7 +66,6 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>("SUMMARY"); 
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<StudentData | null>(null);
   
-  // AI Advice State
   const [aiAdvice, setAiAdvice] = useState<string>("");
   const [adviceSource, setAdviceSource] = useState<'AI' | 'Local' | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -77,6 +77,10 @@ const App: React.FC = () => {
   const cardRef = useRef<HTMLDivElement>(null);
   const batchCardRef = useRef<HTMLDivElement>(null);
   const [batchTargetStudent, setBatchTargetStudent] = useState<StudentData | null>(null);
+
+  const APP_NAME = "Trợ lý phân tích số liệu điểm thi";
+  const APP_SUBTITLE = "Phân tích năng lực và quyết định sư phạm";
+  const AUTHOR_INFO = "Tác giả: Trương Thị Hương - Trường PTDTNT THPT Mường Ảng - 0989550411";
 
   const classificationPriority: Record<string, number> = {
     [StudentClassification.TOT]: 1,
@@ -230,9 +234,9 @@ const App: React.FC = () => {
 
     const ws = XLSX.utils.json_to_sheet(excelRows);
     ws['!cols'] = [{ wch: 5 }, { wch: 25 }, { wch: 10 }, { wch: 20 }, { wch: 20 }, ...headers.map(() => ({ wch: 8 })), { wch: 50 }];
-    const sheetName = activeTab === "SUMMARY" ? "Tong_Hop_Toan_Truong" : `Lop_${activeTab}`;
+    const sheetName = activeTab === "SUMMARY" ? "Tong_Hop" : `Lop_${activeTab}`;
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `EduMind_Bao_Cao_${sheetName}.xlsx`);
+    XLSX.writeFile(wb, `${APP_NAME}_${sheetName}.xlsx`);
   };
 
   const exportBatchPDF = async () => {
@@ -269,7 +273,7 @@ const App: React.FC = () => {
           pdf.addImage(imgData, 'PNG', (pdfWidth - imgWidth) / 2, (pdfHeight - imgHeight) / 2, imgWidth, imgHeight);
         }
       }
-      pdf.save(`EduMind_The_Nang_Luc_Radar_${activeTab}_${new Date().getTime()}.pdf`);
+      pdf.save(`${APP_NAME}_Radar_${activeTab}_${new Date().getTime()}.pdf`);
     } catch (err) { console.error(err); alert("Lỗi xuất PDF."); } finally { setExporting(false); setBatchProgress(null); setBatchTargetStudent(null); }
   };
 
@@ -345,7 +349,7 @@ const App: React.FC = () => {
               <div className="p-4 bg-indigo-600 rounded-3xl shadow-2xl shadow-indigo-200"><BrainCircuit className="w-12 h-12 text-white" /></div>
               <div>
                 <h4 className="text-3xl font-black text-slate-900 tracking-tight uppercase">Hồ Sơ Năng Lực Đa Chiều</h4>
-                <p className="text-xs font-black text-indigo-500 uppercase tracking-[0.3em]">EduMind Enterprise • Performance Analysis</p>
+                <p className="text-xs font-black text-indigo-500 uppercase tracking-[0.3em]">{APP_NAME}</p>
               </div>
             </div>
             <div className="text-right">
@@ -388,8 +392,8 @@ const App: React.FC = () => {
               </div>
               <div className="bg-slate-900 p-8 rounded-[32px] text-white shadow-2xl relative overflow-hidden">
                 <Zap className="absolute -right-6 -bottom-6 w-32 h-32 text-indigo-500/10" />
-                <h5 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">Thông điệp EduMind</h5>
-                <p className="text-sm font-medium leading-relaxed italic relative z-10 text-slate-300">"Điểm số chỉ là những cột mốc, sự nỗ lực không ngừng mới là tấm vé dẫn tới tương lai rạng rỡ."</p>
+                <h5 className="text-[10px] font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">Lời khuyên sư phạm</h5>
+                <p className="text-sm font-medium leading-relaxed italic relative z-10 text-slate-300">"Sự nỗ lực bền bỉ là chìa khóa mở cánh cửa tri thức."</p>
               </div>
             </div>
             <div className="col-span-8 h-[500px] flex items-center justify-center bg-white rounded-[48px] border-4 border-slate-50 shadow-2xl p-6 relative">
@@ -408,13 +412,16 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="pt-8 border-t border-slate-100 flex justify-between items-center">
-            <div className="flex items-center gap-3"><Sparkles className="w-5 h-5 text-amber-400" /><p className="text-xs font-bold text-slate-400 uppercase tracking-widest italic">Success is built on every small effort daily</p></div>
+            <div className="flex items-center gap-3">
+              <User className="w-5 h-5 text-indigo-500" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">{AUTHOR_INFO}</p>
+            </div>
             <div className="flex items-center gap-2">
                <div className="text-right">
-                  <p className="text-[10px] font-black text-slate-300 uppercase leading-none">Powered by</p>
-                  <p className="text-xs font-black text-slate-900 leading-none">EduMind Platform</p>
+                  <p className="text-[10px] font-black text-slate-300 uppercase leading-none">Phát triển bởi</p>
+                  <p className="text-xs font-black text-slate-900 leading-none">Hệ thống phân tích điểm thi</p>
                </div>
-               <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center font-black text-white text-lg">EM</div>
+               <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center font-black text-white text-lg">H</div>
             </div>
           </div>
         </div>
@@ -435,7 +442,7 @@ const App: React.FC = () => {
               <div className="absolute inset-0 flex items-center justify-center font-black text-slate-900">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</div>
             </div>
             <div><h3 className="text-xl font-black text-slate-900">Đang xuất Hồ sơ Năng lực Radar</h3><p className="text-sm font-bold text-slate-400 mt-1">Đang xử lý: {batchProgress.current} / {batchProgress.total} học sinh</p></div>
-            <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100"><Loader2 className="w-4 h-4 text-indigo-600 animate-spin" /><p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest truncate">Đang vẽ mạng nhện: {batchTargetStudent?.name}</p></div>
+            <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100"><Loader2 className="w-4 h-4 text-indigo-600 animate-spin" /><p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest truncate">Đang vẽ: {batchTargetStudent?.name}</p></div>
           </div>
         </div>
       )}
@@ -498,7 +505,7 @@ const App: React.FC = () => {
 
       <header className="bg-white border-b sticky top-0 z-50 no-print">
         <div className="max-w-[1600px] mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3"><div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200"><BrainCircuit className="w-5 h-5 text-white" /></div><div><h1 className="text-xl font-black text-slate-900 tracking-tight">EduMind <span className="text-indigo-600">Enterprise</span></h1><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">Phân tích Năng lực & Quyết định sư phạm</p></div></div>
+          <div className="flex items-center gap-3"><div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200"><BrainCircuit className="w-5 h-5 text-white" /></div><div><h1 className="text-xl font-black text-slate-900 tracking-tight">{APP_NAME}</h1><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">{APP_SUBTITLE}</p></div></div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border no-print">
               <button onClick={exportToExcelFormatted} className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-700 rounded-lg hover:bg-slate-50 transition shadow-sm text-xs font-bold"><FileSpreadsheet className="w-4 h-4 text-emerald-600" /> <span>Excel</span></button>
@@ -512,7 +519,7 @@ const App: React.FC = () => {
 
       <div className="flex-1 flex max-w-[1600px] mx-auto w-full">
         <aside className="w-64 border-r bg-white hidden lg:flex flex-col p-4 sticky top-16 h-[calc(100vh-64px)] overflow-y-auto no-print">
-          <button onClick={() => setActiveTab("SUMMARY")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm mb-6 ${activeTab === "SUMMARY" ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-600 hover:bg-slate-50'}`}><LayoutDashboard className="w-4 h-4" /> Tổng hợp trường</button>
+          <button onClick={() => setActiveTab("SUMMARY")} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-bold text-sm mb-6 ${activeTab === "SUMMARY" ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'text-slate-600 hover:bg-slate-50'}`}><LayoutDashboard className="w-4 h-4" /> Tổng hợp số liệu</button>
           <div className="space-y-1">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 px-2">Danh sách lớp ({sortedClassNames.length})</h3>
             {sortedClassNames.map(cls => (
@@ -522,22 +529,31 @@ const App: React.FC = () => {
               </div>
             ))}
           </div>
+          <div className="mt-auto pt-6 border-t">
+            <p className="text-[9px] font-bold text-slate-400 leading-relaxed italic">{AUTHOR_INFO}</p>
+          </div>
         </aside>
 
         <main className="flex-1 p-6 overflow-hidden">
           {allStudents.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center p-12 bg-white rounded-[40px] border-2 border-dashed border-slate-200"><School className="w-16 h-16 text-slate-200 mb-6" /><h2 className="text-2xl font-black text-slate-900 mb-2">Hệ thống hỗ trợ ra quyết định EduMind</h2><p className="text-slate-400 text-sm max-w-md">Tải file điểm để nhận báo cáo phân tích và biểu đồ năng lực đa chiều.</p></div>
+            <div className="h-full flex flex-col items-center justify-center text-center p-12 bg-white rounded-[40px] border-2 border-dashed border-slate-200">
+              <School className="w-16 h-16 text-slate-200 mb-6" />
+              <h2 className="text-2xl font-black text-slate-900 mb-2">{APP_NAME}</h2>
+              <p className="text-slate-500 font-bold mb-4">{APP_SUBTITLE}</p>
+              <p className="text-slate-400 text-sm max-w-md">{AUTHOR_INFO}</p>
+              <p className="text-slate-400 text-xs mt-8">Tải file điểm để nhận báo cáo phân tích và biểu đồ năng lực đa chiều.</p>
+            </div>
           ) : (
             <div className="space-y-8 pedagogical-report" ref={reportRef}>
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                  <div className="flex items-center gap-2 text-indigo-600 mb-1"><Layers className="w-4 h-4" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeTab === "SUMMARY" ? "Toàn trường" : `Lớp ${activeTab}`}</span></div>
-                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Phân tích Hiệu suất {activeTab === "SUMMARY" ? "Hệ thống" : activeTab}</h2>
+                  <div className="flex items-center gap-2 text-indigo-600 mb-1"><Layers className="w-4 h-4" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">{activeTab === "SUMMARY" ? "Tổng hợp" : `Lớp ${activeTab}`}</span></div>
+                  <h2 className="text-3xl font-black text-slate-900 tracking-tight">Hiệu suất học tập {activeTab === "SUMMARY" ? "Toàn đơn vị" : activeTab}</h2>
                   {activeTab !== "SUMMARY" && teacherNames[activeTab] && (<p className="text-sm font-bold text-indigo-500 mt-1 flex items-center gap-1"><UserCheck className="w-4 h-4" /> GVCN: {teacherNames[activeTab]}</p>)}
                 </div>
                 <div className="flex gap-2">
                    <div className="bg-white px-5 py-3 rounded-2xl border border-slate-100 flex flex-col items-center shadow-sm"><span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Tổng số</span><span className="text-lg font-black">{stats.total}</span></div>
-                   <div className="bg-white px-5 py-3 rounded-2xl border border-slate-100 flex flex-col items-center shadow-sm"><span className="text-[9px] font-black text-emerald-500 uppercase tracking-wider">Giỏi (Tốt+TC)</span><span className="text-lg font-black text-emerald-600">{stats.totCount + stats.tiemCanTotCount}</span></div>
+                   <div className="bg-white px-5 py-3 rounded-2xl border border-slate-100 flex flex-col items-center shadow-sm"><span className="text-[9px] font-black text-emerald-500 uppercase tracking-wider">Tốt + TC</span><span className="text-lg font-black text-emerald-600">{stats.totCount + stats.tiemCanTotCount}</span></div>
                 </div>
               </div>
 
@@ -555,7 +571,7 @@ const App: React.FC = () => {
                       <div>
                         <h3 className="text-2xl font-black text-white tracking-tight">Trợ lý Sư phạm {adviceSource === 'Local' ? 'Nội bộ' : 'AI'}</h3>
                         <p className="text-xs font-black text-indigo-300 uppercase tracking-[0.2em] flex items-center gap-2">
-                          {adviceSource === 'Local' ? <><Cpu className="w-3 h-3" /> Phân tích bởi thuật toán Offline</> : <><Sparkles className="w-3 h-3" /> Cung cấp bởi Gemini Flash 3</>}
+                          {adviceSource === 'Local' ? <><Cpu className="w-3 h-3" /> Thuật toán Offline</> : <><Sparkles className="w-3 h-3" /> Gemini Flash 3</>}
                         </p>
                       </div>
                     </div>
@@ -572,7 +588,7 @@ const App: React.FC = () => {
                   {!aiAdvice && !isAiLoading ? (
                     <div className="flex flex-col items-center justify-center py-12 text-center">
                        <Lightbulb className="w-12 h-12 text-indigo-400/50 mb-4 animate-pulse" />
-                       <p className="text-slate-400 font-bold max-w-sm">Hệ thống sẽ tự động sử dụng Phân tích Nội bộ nếu thiết bị đang Offline hoặc thiếu API Key.</p>
+                       <p className="text-slate-400 font-bold max-w-sm">Hệ thống phân tích cơ cấu điểm số và đưa ra khuyến nghị bứt phá.</p>
                     </div>
                   ) : isAiLoading ? (
                     <div className="space-y-4 py-8">
@@ -581,7 +597,7 @@ const App: React.FC = () => {
                       <div className="h-4 bg-white/5 rounded-full w-5/6 animate-pulse delay-150"></div>
                       <div className="pt-4 flex items-center gap-2">
                         <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
-                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest italic">Đang phân tích cơ cấu học lực...</span>
+                        <span className="text-[10px] font-black text-indigo-400 uppercase tracking-widest italic">Đang phân tích dữ liệu sư phạm...</span>
                       </div>
                     </div>
                   ) : (
@@ -593,10 +609,10 @@ const App: React.FC = () => {
                          <div className="flex items-center gap-2">
                            {adviceSource === 'Local' ? <WifiOff className="w-4 h-4 text-amber-400" /> : <Sparkles className="w-4 h-4 text-amber-400" />}
                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                             {adviceSource === 'Local' ? 'Phân tích Offline Sẵn sàng' : 'Khuyến nghị chiến lược bứt phá 2024'}
+                             {adviceSource === 'Local' ? 'Phân tích hệ thống' : 'Khuyến nghị chiến lược'}
                            </span>
                          </div>
-                         <div className="text-[10px] font-bold text-indigo-400 italic">Dành cho cán bộ quản lý & giáo viên.</div>
+                         <div className="text-[10px] font-bold text-indigo-400 italic">Hỗ trợ ra quyết định sư phạm.</div>
                       </div>
                     </div>
                   )}
@@ -605,7 +621,7 @@ const App: React.FC = () => {
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 bg-white p-8 rounded-[32px] shadow-sm border border-slate-100">
-                  <h3 className="font-black text-slate-900 flex items-center gap-2 mb-8"><BarChart3 className="w-5 h-5 text-indigo-600" /> Cơ cấu Năng lực</h3>
+                  <h3 className="font-black text-slate-900 flex items-center gap-2 mb-8"><BarChart3 className="w-5 h-5 text-indigo-600" /> Thống kê Xếp loại</h3>
                   <div className="h-72">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={chartData.filter(d => d.value > 0)}>
@@ -632,7 +648,7 @@ const App: React.FC = () => {
 
               <div className="bg-white rounded-[40px] shadow-sm border border-slate-100 overflow-hidden">
                 <div className="p-8 border-b flex flex-col md:flex-row md:items-center justify-between gap-6">
-                  <h3 className="text-xl font-black text-slate-900">Cơ sở dữ liệu Năng lực</h3>
+                  <h3 className="text-xl font-black text-slate-900">Chi tiết Năng lực học sinh</h3>
                   <div className="flex gap-3 no-print">
                     <div className="relative"><Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" /><input type="text" placeholder="Tìm tên..." className="pl-11 pr-6 py-3 bg-slate-50 border-none rounded-2xl text-sm w-full sm:w-64" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} /></div>
                     <select className="px-6 py-3 bg-slate-50 border-none rounded-2xl text-sm font-bold text-slate-600 appearance-none shadow-sm" value={selectedClassification} onChange={(e) => setSelectedClassification(e.target.value)}><option value="All">Tất cả</option>{Object.values(StudentClassification).map(v => <option key={v} value={v}>{v}</option>)}</select>
@@ -641,7 +657,7 @@ const App: React.FC = () => {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
                     <thead className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
-                      <tr><th className="px-8 py-5">Học sinh</th><th className="px-8 py-5">Xếp loại</th><th className="px-8 py-5">Dự báo (What-if)</th><th className="px-8 py-5 text-right no-print">Bản đồ Năng lực</th></tr>
+                      <tr><th className="px-8 py-5">Học sinh</th><th className="px-8 py-5">Xếp loại</th><th className="px-8 py-5">Dự báo</th><th className="px-8 py-5 text-right no-print">Thao tác</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {filteredStudents.sort((a,b) => (classificationPriority[a.classification] || 99) - (classificationPriority[b.classification] || 99)).map(s => (
@@ -649,7 +665,7 @@ const App: React.FC = () => {
                           <td className="px-8 py-6"><div className="font-black text-slate-900 group-hover:text-indigo-600 transition-colors">{s.name}</div><div className="text-[10px] font-black text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded w-fit mt-1">{s.className}</div></td>
                           <td className="px-8 py-6"><span className={`px-3 py-1 rounded-xl text-[12px] font-black border shadow-sm ${getClassificationStyles(s.classification)}`}>{s.classification}</span></td>
                           <td className="px-8 py-6"><button onClick={() => setSimulatingStudent(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-xl hover:bg-amber-100 transition-all font-black text-xs border border-amber-100"><SlidersHorizontal className="w-4 h-4" /> Mô phỏng</button></td>
-                          <td className="px-8 py-6 text-right no-print"><button onClick={() => setSelectedStudentForCard(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all font-black text-xs border border-indigo-100"><BrainCircuit className="w-4 h-4" /> Bản đồ Radar</button></td>
+                          <td className="px-8 py-6 text-right no-print"><button onClick={() => setSelectedStudentForCard(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all font-black text-xs border border-indigo-100"><BrainCircuit className="w-4 h-4" /> Radar</button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -660,6 +676,16 @@ const App: React.FC = () => {
           )}
         </main>
       </div>
+      <footer className="bg-white border-t p-6 no-print">
+         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="flex items-center gap-2 text-slate-400 text-xs font-bold">
+               <User className="w-4 h-4" /> {AUTHOR_INFO}
+            </div>
+            <div className="text-slate-300 text-[10px] font-black uppercase tracking-widest">
+               © 2024 - {APP_NAME}
+            </div>
+         </div>
+      </footer>
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: #f8fafc; }
