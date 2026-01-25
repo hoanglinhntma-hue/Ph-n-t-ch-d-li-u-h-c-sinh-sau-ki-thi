@@ -54,6 +54,17 @@ import {
   PolarRadiusAxis
 } from 'recharts';
 
+// Hàm hỗ trợ loại bỏ dấu tiếng Việt để đặt tên file an toàn
+const sanitizeFilename = (text: string) => {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .replace(/_+/g, '_');
+};
+
 const App: React.FC = () => {
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
@@ -236,7 +247,7 @@ const App: React.FC = () => {
     ws['!cols'] = [{ wch: 5 }, { wch: 25 }, { wch: 10 }, { wch: 20 }, { wch: 20 }, ...headers.map(() => ({ wch: 8 })), { wch: 50 }];
     const sheetName = activeTab === "SUMMARY" ? "Tong_Hop" : `Lop_${activeTab}`;
     XLSX.utils.book_append_sheet(wb, ws, sheetName);
-    XLSX.writeFile(wb, `${APP_NAME}_${sheetName}.xlsx`);
+    XLSX.writeFile(wb, `${sanitizeFilename(APP_NAME)}_${sheetName}.xlsx`);
   };
 
   const exportBatchPDF = async () => {
@@ -247,43 +258,83 @@ const App: React.FC = () => {
     const pdf = new jsPDF({
       orientation: 'landscape',
       unit: 'mm',
-      format: 'a4'
+      format: 'a4',
+      compress: true // Nén dung lượng file
     });
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
+    const margin = 10;
 
     try {
       for (let i = 0; i < filteredStudents.length; i++) {
         const student = filteredStudents[i];
         setBatchTargetStudent(student);
         setBatchProgress({ current: i + 1, total: filteredStudents.length });
-        await new Promise(resolve => setTimeout(resolve, 300)); 
+        
+        await new Promise(resolve => setTimeout(resolve, 400)); 
 
         if (batchCardRef.current) {
           const canvas = await html2canvas(batchCardRef.current, {
-            scale: 2,
+            scale: 2.0, // Tối ưu: Đủ nét cho A4 nhưng không gây tràn bộ nhớ
             useCORS: true,
-            backgroundColor: '#ffffff'
+            backgroundColor: '#ffffff',
+            logging: false,
+            removeContainer: true
           });
-          const imgData = canvas.toDataURL('image/png');
+          
+          const imgData = canvas.toDataURL('image/jpeg', 0.9); // Dùng JPEG để giảm dung lượng file PDF
           if (i > 0) pdf.addPage('landscape', 'mm', 'a4');
-          const imgWidth = 270;
-          const imgHeight = (canvas.height * imgWidth) / canvas.width;
-          pdf.addImage(imgData, 'PNG', (pdfWidth - imgWidth) / 2, (pdfHeight - imgHeight) / 2, imgWidth, imgHeight);
+
+          const availableWidth = pdfWidth - (margin * 2);
+          const availableHeight = pdfHeight - (margin * 2);
+          
+          let imgDisplayWidth = availableWidth;
+          let imgDisplayHeight = (canvas.height * imgDisplayWidth) / canvas.width;
+
+          if (imgDisplayHeight > availableHeight) {
+            imgDisplayHeight = availableHeight;
+            imgDisplayWidth = (canvas.width * imgDisplayHeight) / canvas.height;
+          }
+
+          const xPos = (pdfWidth - imgDisplayWidth) / 2;
+          const yPos = (pdfHeight - imgDisplayHeight) / 2;
+
+          pdf.addImage(imgData, 'JPEG', xPos, yPos, imgDisplayWidth, imgDisplayHeight);
+          
+          // Xóa canvas khỏi bộ nhớ
+          canvas.width = 0;
+          canvas.height = 0;
         }
       }
-      pdf.save(`${APP_NAME}_Radar_${activeTab}_${new Date().getTime()}.pdf`);
-    } catch (err) { console.error(err); alert("Lỗi xuất PDF."); } finally { setExporting(false); setBatchProgress(null); setBatchTargetStudent(null); }
+      
+      const safeTabName = sanitizeFilename(activeTab);
+      const timestamp = new Date().getTime();
+      pdf.save(`Radar_${safeTabName}_${timestamp}.pdf`);
+      
+    } catch (err) { 
+      console.error(err); 
+      alert("Đã xảy ra lỗi khi tạo PDF. Vui lòng thử lại với số lượng học sinh ít hơn hoặc kiểm tra kết nối."); 
+    } finally { 
+      setExporting(false); 
+      setBatchProgress(null); 
+      setBatchTargetStudent(null); 
+    }
   };
 
   const downloadStudentCard = async () => {
     if (!cardRef.current || !selectedStudentForCard) return;
     setExporting(true);
     try {
-      const canvas = await html2canvas(cardRef.current, { scale: 3, useCORS: true, backgroundColor: null });
+      const canvas = await html2canvas(cardRef.current, { 
+        scale: 2.5, 
+        useCORS: true, 
+        backgroundColor: null,
+        logging: false 
+      });
       const link = document.createElement('a');
-      link.download = `The_Nang_Luc_${selectedStudentForCard.name.replace(/\s/g, '_')}.png`;
+      const safeName = sanitizeFilename(selectedStudentForCard.name);
+      link.download = `The_Radar_${safeName}.png`;
       link.href = canvas.toDataURL('image/png');
       link.click();
     } catch (err) { console.error(err); } finally { setExporting(false); }
@@ -323,7 +374,7 @@ const App: React.FC = () => {
     return 'bg-rose-500';
   };
 
-  const CardUI = ({ student, innerRef }: { student: StudentData, innerRef?: React.RefObject<HTMLDivElement> }) => {
+  const CardUI = ({ student, innerRef }: { student: StudentData, innerRef?: React.RefObject<HTMLDivElement | null> }) => {
     const radarData = getRadarData(student.scores);
     const teacherName = teacherNames[student.className] || '';
     
@@ -439,15 +490,30 @@ const App: React.FC = () => {
                 <circle className="text-slate-100 stroke-current" strokeWidth="8" cx="50" cy="50" r="40" fill="transparent"></circle>
                 <circle className="text-indigo-600 stroke-current transition-all duration-300" strokeWidth="8" strokeLinecap="round" cx="50" cy="50" r="40" fill="transparent" strokeDasharray="251.2" strokeDashoffset={251.2 - (251.2 * batchProgress.current) / batchProgress.total}></circle>
               </svg>
-              <div className="absolute inset-0 flex items-center justify-center font-black text-slate-900">{Math.round((batchProgress.current / batchProgress.total) * 100)}%</div>
+              <div className="absolute inset-0 flex items-center justify-center font-black text-slate-900">
+                {batchProgress.current === batchProgress.total ? 'Đang nén...' : Math.round((batchProgress.current / batchProgress.total) * 100) + '%'}
+              </div>
             </div>
-            <div><h3 className="text-xl font-black text-slate-900">Đang xuất Hồ sơ Năng lực Radar</h3><p className="text-sm font-bold text-slate-400 mt-1">Đang xử lý: {batchProgress.current} / {batchProgress.total} học sinh</p></div>
-            <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100"><Loader2 className="w-4 h-4 text-indigo-600 animate-spin" /><p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest truncate">Đang vẽ: {batchTargetStudent?.name}</p></div>
+            <div>
+              <h3 className="text-xl font-black text-slate-900">
+                {batchProgress.current === batchProgress.total ? 'Đang đóng gói PDF...' : 'Đang xuất Hồ sơ Radar'}
+              </h3>
+              <p className="text-sm font-bold text-slate-400 mt-1">Đang xử lý: {batchProgress.current} / {batchProgress.total} học sinh</p>
+            </div>
+            <div className="flex items-center gap-3 px-4 py-2 bg-slate-50 rounded-xl border border-slate-100">
+              <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+              <p className="text-[10px] font-black text-indigo-600 uppercase tracking-widest truncate">
+                {batchProgress.current === batchProgress.total ? 'Chuẩn bị tải xuống...' : `Đang vẽ: ${batchTargetStudent?.name}`}
+              </p>
+            </div>
           </div>
         </div>
       )}
 
-      <div className="fixed left-[-9999px] top-[-9999px]">{batchTargetStudent && <CardUI student={batchTargetStudent} innerRef={batchCardRef} />}</div>
+      {/* Cố định kích thước khung vẽ ngầm để html2canvas không bị cắt thông tin */}
+      <div className="fixed left-[-9999px] top-[-9999px] overflow-hidden" style={{ width: '1000px', height: 'auto' }}>
+        {batchTargetStudent && <CardUI student={batchTargetStudent} innerRef={batchCardRef} />}
+      </div>
 
       {simulatingStudent && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
