@@ -255,11 +255,12 @@ const App: React.FC = () => {
     setExporting(true);
     setBatchProgress({ current: 0, total: filteredStudents.length });
 
-    const pdf = new jsPDF({
+    // Sửa lỗi TS2554 bằng cách ép kiểu any cho constructor để bỏ qua kiểm tra số lượng đối số sai lệch của TS
+    const pdf = new (jsPDF as any)({
       orientation: 'landscape',
       unit: 'mm',
       format: 'a4',
-      compress: true // Nén dung lượng file
+      compress: true
     });
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
@@ -276,14 +277,14 @@ const App: React.FC = () => {
 
         if (batchCardRef.current) {
           const canvas = await html2canvas(batchCardRef.current, {
-            scale: 2.0, // Tối ưu: Đủ nét cho A4 nhưng không gây tràn bộ nhớ
+            scale: 2.0, 
             useCORS: true,
             backgroundColor: '#ffffff',
             logging: false,
             removeContainer: true
           });
           
-          const imgData = canvas.toDataURL('image/jpeg', 0.9); // Dùng JPEG để giảm dung lượng file PDF
+          const imgData = canvas.toDataURL('image/jpeg', 0.9); 
           if (i > 0) pdf.addPage('landscape', 'mm', 'a4');
 
           const availableWidth = pdfWidth - (margin * 2);
@@ -302,7 +303,6 @@ const App: React.FC = () => {
 
           pdf.addImage(imgData, 'JPEG', xPos, yPos, imgDisplayWidth, imgDisplayHeight);
           
-          // Xóa canvas khỏi bộ nhớ
           canvas.width = 0;
           canvas.height = 0;
         }
@@ -314,7 +314,7 @@ const App: React.FC = () => {
       
     } catch (err) { 
       console.error(err); 
-      alert("Đã xảy ra lỗi khi tạo PDF. Vui lòng thử lại với số lượng học sinh ít hơn hoặc kiểm tra kết nối."); 
+      alert("Đã xảy ra lỗi khi tạo PDF. Vui lòng thử lại với số lượng học sinh ít hơn."); 
     } finally { 
       setExporting(false); 
       setBatchProgress(null); 
@@ -374,11 +374,12 @@ const App: React.FC = () => {
     return 'bg-rose-500';
   };
 
+  // Sửa lỗi TS2322: Chấp nhận RefObject<HTMLDivElement | null>
   const CardUI = ({ student, innerRef }: { student: StudentData, innerRef?: React.RefObject<HTMLDivElement | null> }) => {
     const radarData = getRadarData(student.scores);
     const teacherName = teacherNames[student.className] || '';
     
-    const renderPolarAngleAxis = ({ payload, x, y, cx, cy, ...rest }: any) => {
+    const renderPolarAngleAxis = ({ payload, x, y, cx, cy }: any) => {
       const dataPoint = radarData.find(d => d.subject === payload.value);
       const score = dataPoint ? dataPoint.A.toFixed(1) : "";
       
@@ -510,7 +511,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Cố định kích thước khung vẽ ngầm để html2canvas không bị cắt thông tin */}
       <div className="fixed left-[-9999px] top-[-9999px] overflow-hidden" style={{ width: '1000px', height: 'auto' }}>
         {batchTargetStudent && <CardUI student={batchTargetStudent} innerRef={batchCardRef} />}
       </div>
