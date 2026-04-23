@@ -69,6 +69,7 @@ const App: React.FC = () => {
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [teacherNames, setTeacherNames] = useState<Record<string, string>>({});
+  const [subjectTeachers, setSubjectTeachers] = useState<Record<string, Record<string, string>>>({});
   const [loading, setLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{current: number, total: number} | null>(null);
@@ -91,7 +92,44 @@ const App: React.FC = () => {
 
   const APP_NAME = "Trợ lý phân tích số liệu điểm thi";
   const APP_SUBTITLE = "Phân tích năng lực và quyết định sư phạm";
-  const AUTHOR_INFO = "Tác giả: Trương Thị Hương - Trường PTDTNT THPT Mường Ảng - 0989550411";
+
+  const STORAGE_KEY = "grading_app_data_v2";
+  const isInitialMount = useRef(true);
+
+  // Load and Sync logic
+  useEffect(() => {
+    // 1. Initial Load
+    if (isInitialMount.current) {
+      const savedData = localStorage.getItem(STORAGE_KEY);
+      if (savedData) {
+        try {
+          const { students, headersList, teachers, subTeachers } = JSON.parse(savedData);
+          if (students) setAllStudents(students);
+          if (headersList) setHeaders(headersList);
+          if (teachers) setTeacherNames(teachers);
+          if (subTeachers) setSubjectTeachers(subTeachers);
+        } catch (err) {
+          console.error("Lỗi khôi phục:", err);
+        }
+      }
+      isInitialMount.current = false;
+      return;
+    }
+
+    // 2. Sync to LocalStorage
+    if (allStudents.length > 0 || Object.keys(teacherNames).length > 0 || Object.keys(subjectTeachers).length > 0) {
+      const dataToSave = {
+        students: allStudents,
+        headersList: headers,
+        teachers: teacherNames,
+        subTeachers: subjectTeachers
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+    } else {
+      // Clear if empty
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  }, [allStudents, headers, teacherNames, subjectTeachers]);
 
   const classificationPriority: Record<string, number> = {
     [StudentClassification.TOT]: 1,
@@ -223,6 +261,53 @@ const App: React.FC = () => {
     reader.readAsArrayBuffer(file);
   };
 
+  const downloadSampleExcel = () => {
+    const sampleData = [
+      {
+        'STT': 1,
+        'Họ và Tên': 'Nguyễn Văn A',
+        'Lớp': '10A1',
+        'Toán': 8.5,
+        'Văn': 7.0,
+        'Anh': 9.0,
+        'Lý': 6.5,
+        'Hóa': 8.0,
+        'Sinh': 7.5,
+        'Sử': 8.0,
+        'Địa': 7.0,
+        'GDCD': 9.0
+      },
+      {
+        'STT': 2,
+        'Họ và Tên': 'Trần Thị B',
+        'Lớp': '10A1',
+        'Toán': 4.5,
+        'Văn': 5.0,
+        'Anh': 5.5,
+        'Lý': 4.0,
+        'Hóa': 3.5,
+        'Sinh': 5.0,
+        'Sử': 6.0,
+        'Địa': 5.5,
+        'GDCD': 7.0
+      }
+    ];
+
+    const ws = XLSX.utils.json_to_sheet(sampleData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Mau_Diem_Thi");
+    
+    // Căn chỉnh độ rộng cột
+    ws['!cols'] = [
+      { wch: 5 }, { wch: 20 }, { wch: 10 }, 
+      { wch: 8 }, { wch: 8 }, { wch: 8 }, 
+      { wch: 8 }, { wch: 8 }, { wch: 8 },
+      { wch: 8 }, { wch: 8 }, { wch: 8 }
+    ];
+
+    XLSX.writeFile(wb, "Mau_File_Diem_Thi.xlsx");
+  };
+
   const exportToExcelFormatted = () => {
     const wb = XLSX.utils.book_new();
     const sourceData = activeTab === "SUMMARY" ? allStudents : (classGroups[activeTab] || []);
@@ -344,6 +429,16 @@ const App: React.FC = () => {
     setTeacherNames(prev => ({ ...prev, [className]: name }));
   };
 
+  const updateSubjectTeacher = (className: string, subject: string, teacherName: string) => {
+    setSubjectTeachers(prev => ({
+      ...prev,
+      [className]: {
+        ...(prev[className] || {}),
+        [subject]: teacherName
+      }
+    }));
+  };
+
   const chartData = [
     { name: 'Tốt', value: stats.totCount, fill: '#10b981' },
     { name: 'TC Tốt', value: stats.tiemCanTotCount, fill: '#3b82f6' },
@@ -378,15 +473,20 @@ const App: React.FC = () => {
   const CardUI = ({ student, innerRef }: { student: StudentData, innerRef?: React.RefObject<HTMLDivElement | null> }) => {
     const radarData = getRadarData(student.scores);
     const teacherName = teacherNames[student.className] || '';
+    const classSubjectTeachers = subjectTeachers[student.className] || {};
     
     const renderPolarAngleAxis = ({ payload, x, y, cx, cy }: any) => {
       const dataPoint = radarData.find(d => d.subject === payload.value);
       const score = dataPoint ? dataPoint.A.toFixed(1) : "";
+      const sTeacher = classSubjectTeachers[payload.value];
       
       return (
         <g transform={`translate(${x},${y})`}>
           <text x={0} y={0} dy={4} textAnchor={x > cx ? 'start' : x < cx ? 'end' : 'middle'} className="fill-slate-600 text-[10px] font-black">{payload.value}</text>
           <text x={0} y={12} dy={4} textAnchor={x > cx ? 'start' : x < cx ? 'end' : 'middle'} className="fill-indigo-600 text-[9px] font-black">({score})</text>
+          {sTeacher && (
+            <text x={0} y={22} dy={4} textAnchor={x > cx ? 'start' : x < cx ? 'end' : 'middle'} className="fill-slate-400 text-[7px] font-bold italic">GV: {sTeacher}</text>
+          )}
         </g>
       );
     };
@@ -463,11 +563,7 @@ const App: React.FC = () => {
               </ResponsiveContainer>
             </div>
           </div>
-          <div className="pt-8 border-t border-slate-100 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <User className="w-5 h-5 text-indigo-500" />
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">{AUTHOR_INFO}</p>
-            </div>
+          <div className="pt-8 border-t border-slate-100 flex justify-end items-center">
             <div className="flex items-center gap-2">
                <div className="text-right">
                   <p className="text-[10px] font-black text-slate-300 uppercase leading-none">Phát triển bởi</p>
@@ -574,11 +670,12 @@ const App: React.FC = () => {
           <div className="flex items-center gap-3"><div className="p-2 bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200"><BrainCircuit className="w-5 h-5 text-white" /></div><div><h1 className="text-xl font-black text-slate-900 tracking-tight">{APP_NAME}</h1><p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest italic">{APP_SUBTITLE}</p></div></div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border no-print">
+              <button onClick={downloadSampleExcel} className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-700 rounded-lg hover:bg-slate-50 transition shadow-sm text-xs font-bold border border-slate-200"><FileSpreadsheet className="w-4 h-4 text-indigo-600" /> <span>Tải file mẫu</span></button>
               <button onClick={exportToExcelFormatted} className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-700 rounded-lg hover:bg-slate-50 transition shadow-sm text-xs font-bold"><FileSpreadsheet className="w-4 h-4 text-emerald-600" /> <span>Excel</span></button>
               <button onClick={exportBatchPDF} disabled={exporting || allStudents.length === 0} className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-700 rounded-lg hover:bg-slate-50 transition shadow-sm text-xs font-bold"><FileText className="w-4 h-4 text-rose-500" /> <span>PDF Radar Hàng Loạt</span></button>
             </div>
             <label className="cursor-pointer flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition shadow-lg shadow-indigo-100 text-sm font-bold"><Upload className="w-4 h-4" /> <span>Nạp dữ liệu</span><input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleFileUpload} /></label>
-            {allStudents.length > 0 && <button onClick={() => { if(window.confirm("Xóa sạch dữ liệu?")) { setAllStudents([]); setHeaders([]); setActiveTab("SUMMARY"); setTeacherNames({}); } }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>}
+            {allStudents.length > 0 && <button onClick={() => { if(window.confirm("Xác nhận xóa sạch toàn bộ dữ liệu?")) { setAllStudents([]); setHeaders([]); setActiveTab("SUMMARY"); setTeacherNames({}); setSubjectTeachers({}); } }} className="p-2 text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"><Trash2 className="w-5 h-5" /></button>}
           </div>
         </div>
       </header>
@@ -591,12 +688,36 @@ const App: React.FC = () => {
             {sortedClassNames.map(cls => (
               <div key={cls} className="space-y-1 mb-1">
                 <button onClick={() => setActiveTab(cls)} className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg transition-all text-sm font-bold ${activeTab === cls ? 'bg-indigo-50 text-indigo-700 border-l-4 border-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}><span className="truncate">{cls}</span><span className={`text-[10px] px-1.5 py-0.5 rounded-md ${activeTab === cls ? 'bg-indigo-200/50' : 'bg-slate-100'}`}>{classGroups[cls].length}</span></button>
-                {activeTab === cls && (<div className="px-2 pt-1 pb-3 animate-in slide-in-from-top-2 duration-300"><div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2"><label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><UserCheck className="w-3 h-3" /> GV Chủ nhiệm</label><input type="text" placeholder="Tên GV..." value={teacherNames[cls] || ''} onChange={(e) => updateTeacherName(cls, e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none" /></div></div>)}
+                {activeTab === cls && (
+                  <div className="px-2 pt-1 pb-3 animate-in slide-in-from-top-2 duration-300 space-y-4">
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-2">
+                      <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><UserCheck className="w-3 h-3" /> GV Chủ nhiệm</label>
+                      <input type="text" placeholder="Tên GV..." value={teacherNames[cls] || ''} onChange={(e) => updateTeacherName(cls, e.target.value)} className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none" />
+                    </div>
+                    
+                    <div className="bg-white border rounded-xl overflow-hidden">
+                      <div className="bg-slate-50 px-3 py-1.5 border-b"><span className="text-[8px] font-black text-slate-400 uppercase">GV Bộ môn</span></div>
+                      <div className="max-h-40 overflow-y-auto p-2 space-y-2 custom-scrollbar">
+                        {headers.map(sub => (
+                          <div key={sub} className="space-y-1">
+                            <label className="text-[8px] font-bold text-slate-400 ml-1">{sub}</label>
+                            <input 
+                              type="text" 
+                              placeholder="Tên thầy/cô..." 
+                              value={subjectTeachers[cls]?.[sub] || ''} 
+                              onChange={(e) => updateSubjectTeacher(cls, sub, e.target.value)} 
+                              className="w-full px-2 py-1.5 bg-slate-50 border border-slate-100 rounded-lg text-[10px] font-bold focus:ring-1 focus:ring-indigo-500 outline-none" 
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
           <div className="mt-auto pt-6 border-t">
-            <p className="text-[9px] font-bold text-slate-400 leading-relaxed italic">{AUTHOR_INFO}</p>
           </div>
         </aside>
 
@@ -606,7 +727,6 @@ const App: React.FC = () => {
               <School className="w-16 h-16 text-slate-200 mb-6" />
               <h2 className="text-2xl font-black text-slate-900 mb-2">{APP_NAME}</h2>
               <p className="text-slate-500 font-bold mb-4">{APP_SUBTITLE}</p>
-              <p className="text-slate-400 text-sm max-w-md">{AUTHOR_INFO}</p>
               <p className="text-slate-400 text-xs mt-8">Tải file điểm để nhận báo cáo phân tích và biểu đồ năng lực đa chiều.</p>
             </div>
           ) : (
@@ -743,12 +863,9 @@ const App: React.FC = () => {
         </main>
       </div>
       <footer className="bg-white border-t p-6 no-print">
-         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="flex items-center gap-2 text-slate-400 text-xs font-bold">
-               <User className="w-4 h-4" /> {AUTHOR_INFO}
-            </div>
+         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-end items-center gap-4">
             <div className="text-slate-300 text-[10px] font-black uppercase tracking-widest">
-               © 2024 - {APP_NAME}
+               © {new Date().getFullYear()} - {APP_NAME}
             </div>
          </div>
       </footer>

@@ -1,5 +1,6 @@
 {
   "name": "Trợ lý phân tích số liệu điểm thi",
-  "description": "Phân tích năng lực và quyết định sư phạm - Tác giả: Trương Thị Hương - Trường PTDTNT THPT Mường Ảng",
-  "requestFramePermissions": []
+  "description": "Phân tích năng lực và quyết định sư phạm",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
 }
