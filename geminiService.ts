@@ -15,12 +15,12 @@ const getLocalPedagogicalAdvice = (stats: ClassStats): string => {
   advice += `- Đơn vị hiện có **${stats.totCount}** học sinh Tốt (${totPercent}%). `;
   
   if (stats.chuaDatCount > stats.total * 0.2) {
-    advice += `Tỉ lệ học sinh Chưa đạt khá cao (${((stats.chuaDatCount / stats.total) * 100).toFixed(1)}%), cần chú trọng phụ đạo.\n`;
+    advice += `Tỉ lệ học sinh Nguy hiểm khá cao (${((stats.chuaDatCount / stats.total) * 100).toFixed(1)}%), cần chú trọng phụ đạo.\n`;
   } else {
     advice += `Cơ cấu học lực tương đối ổn định.\n`;
   }
 
-  advice += `\n**2. Chiến lược bứt phá cho nhóm Tiệm cận (${tiems} học sinh):**\n`;
+  advice += `\n**2. Chiến lược bứt phá cho nhóm Tiệm cận & Nguy cơ (${tiems} học sinh):**\n`;
   
   if (stats.tiemCanTotCount > 0) {
     advice += `- **Nhóm Tiệm cận Tốt:** Tập trung bồi dưỡng 1-2 môn có điểm từ 7.5 - 7.9. Theo quy tắc +0.5, đây là nhóm dễ nâng hạng nhất.\n`;
@@ -29,7 +29,7 @@ const getLocalPedagogicalAdvice = (stats: ClassStats): string => {
     advice += `- **Nhóm Tiệm cận Khá:** Kiểm tra các môn đang vướng điểm < 5.0. Chỉ cần 01 môn bứt phá lên 5.0, học sinh sẽ thoát khỏi diện Tiệm cận.\n`;
   }
   if (stats.tiemCanDatCount > 0) {
-    advice += `- **Nhóm Tiệm cận Đạt:** Động viên học sinh ở các môn có điểm sát ngưỡng 3.5. Tránh để rơi xuống điểm liệt.\n`;
+    advice += `- **Nhóm Nguy cơ:** Động viên học sinh ở các môn có điểm sát ngưỡng 3.5. Tránh để rơi xuống điểm liệt.\n`;
   }
 
   advice += `\n**3. Khuyến nghị thực chiến:**\n`;
@@ -58,12 +58,12 @@ export const getPedagogicalAdvice = async (stats: ClassStats): Promise<{text: st
       - Học sinh Khá: ${stats.khaCount}
       - Tiệm cận Khá: ${stats.tiemCanKhaCount}
       - Học sinh Đạt: ${stats.datCount}
-      - Tiệm cận Đạt: ${stats.tiemCanDatCount}
-      - Chưa đạt: ${stats.chuaDatCount}
+      - Nguy cơ (Tiệm cận Đạt): ${stats.tiemCanDatCount}
+      - Nguy hiểm (Chưa đạt): ${stats.chuaDatCount}
 
       Nhiệm vụ:
-      1. Phân tích nhanh cơ cấu học lực này.
-      2. Đưa ra 3 khuyến nghị "thực chiến" hỗ trợ nhóm "Tiệm cận" nâng hạng (chú ý ngưỡng bứt phá +0.5).
+      1. Phân tích nhanh cơ cấu học lực này (gồm cả nhóm Nguy cơ và Nguy hiểm).
+      2. Đưa ra 3 khuyến nghị "thực chiến" hỗ trợ nhóm "Tiệm cận" và "Nguy cơ" nâng hạng (chú ý ngưỡng bứt phá +0.5).
       3. Đề xuất cách tối ưu hóa mặt bằng chung.
 
       Yêu cầu: Ngắn gọn, chuyên nghiệp, ngôn ngữ sư phạm Tiếng Việt.

@@ -12,8 +12,8 @@ export enum StudentClassification {
   KHA = 'Học sinh KHÁ',
   TIEM_CAN_KHA = 'Tiệm cận KHÁ',
   DAT = 'Học sinh ĐẠT',
-  TIEM_CAN_DAT = 'Tiệm cận ĐẠT',
-  CHUA_DAT = 'CHƯA ĐẠT',
+  TIEM_CAN_DAT = 'Nguy cơ',
+  CHUA_DAT = 'Nguy hiểm',
 }
 
 export interface SubjectScore {
@@ -39,6 +39,15 @@ export interface StudentData {
   summary: string;
   goals: Goal[];
   prioritySubjects: string[];
+  remedialSubjects: string[];
+  conduct: string;
+  absencesExcused: number;
+  absencesUnexcused: number;
+  absencesTotal: number;
+  note: string;
+  merit: string | null;
+  promotionStatus: string;
+  alerts: string[];
 }
 
 export interface ClassStats {
