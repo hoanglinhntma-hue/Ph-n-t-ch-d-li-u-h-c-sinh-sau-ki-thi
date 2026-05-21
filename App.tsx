@@ -238,25 +238,160 @@ const App: React.FC = () => {
         const wb = XLSX.read(data, { type: 'array' });
         let newProcessedStudents: StudentData[] = [];
         let newSubjectHeaders: Set<string> = new Set();
+
+        const VietnamSubjectsKeywords = [
+          'toán', 'toan', 'toán học', 'toan hoc',
+          'văn', 'van', 'ngữ văn', 'ngu van', 'n.văn', 'n.van', 'ngữvăn',
+          'anh', 'tiếng anh', 'tieng anh', 't.anh', 'ngoại ngữ', 'ngon ngu', 'ng.ngữ', 'ng.ngu', 'ngoai ngu', 'tiếng nước ngoài',
+          'lý', 'ly', 'lí', 'li', 'vật lý', 'vat ly', 'vật lí', 'vat li', 'v.lý', 'v.ly', 'v.lí', 'v.li',
+          'hóa', 'hoa', 'hoá', 'hóa học',
+          'sinh', 'sinh học', 'sinh hoc', 'sinh vật', 'sinh vat',
+          'sử', 'su', 'lịch sử', 'lich su', 'l.sử', 'l.su',
+          'địa', 'dia', 'địa lý', 'dia ly', 'địa lí', 'dia li', 'đ.lý', 'đ.ly', 'đ.lí', 'đ.li',
+          'gdcd', 'công dân', 'cong dan', 'gdkt&pl', 'gdkt', 'pl', 'ktpl', 'kt-pl', 'kinh tế pháp luật', 'kinh te phap luat', 'gdkt & pl',
+          'tin', 'tin học', 'tin hoc', 'it', 'công nghệ thông tin',
+          'công nghệ', 'cong nghe', 'c.nghệ', 'c.nghe', 'cn',
+          'gdtc', 'thể dục', 'the duc', 'giáo dục thể chất', 'giao duc the chat', 'thể chất', 'the chat',
+          'gdqp', 'gdqp&an', 'gdqp-an', 'quốc phòng', 'quoc phong', 'an ninh', 'quốc phòng an ninh', 'qp-an', 'qp&an', 'gdqp & an',
+          'hđtn', 'hdtn', 'hđtn&hn', 'hdtn&hn', 'hoạt động trải nghiệm', 'hoat dong trai nghiem', 'hđtn & hn',
+          'ndgdcđ', 'địa phương', 'dia phuong', 'gd địa phương', 'gd đp'
+        ];
+
+        const isAcademicSubject = (headerName: string): boolean => {
+          const clean = headerName.trim().toLowerCase();
+          
+          if (clean === 'sinh' && (clean.includes('học sinh') || clean.includes('danh') || clean.includes('định'))) {
+            return false;
+          }
+          if (clean.includes('mã học sinh') || clean.includes('định danh') || clean.includes('ngày sinh') || clean.includes('nơi sinh') || clean.includes('đăng ký')) {
+            return false;
+          }
+          if (clean.includes('học tập') || clean.includes('rèn luyện') || clean.includes('buổi nghỉ') || clean.includes('bù') || clean.includes('vắng') || clean.includes('danh hiệu') || clean.includes('ghi chú')) {
+            return false;
+          }
+
+          if (VietnamSubjectsKeywords.includes(clean)) {
+            return true;
+          }
+
+          return VietnamSubjectsKeywords.some(kw => {
+            if (kw.length >= 3 && clean.includes(kw)) {
+              if (kw === 'sinh' && (clean.includes('học sinh') || clean.includes('định danh'))) {
+                return false;
+              }
+              return true;
+            }
+            return false;
+          });
+        };
+
         wb.SheetNames.forEach(wsname => {
           const ws = wb.Sheets[wsname];
-          const jsonData = XLSX.utils.sheet_to_json<any>(ws, { blankrows: false });
-          if (jsonData.length === 0) return;
-          const allHeaders = Object.keys(jsonData[0]);
-          const nameKey = allHeaders.find(h => ['họ tên', 'họ và tên', 'tên'].includes(h.trim().toLowerCase())) || 'Họ tên';
-          const classKey = allHeaders.find(h => ['lớp'].includes(h.trim().toLowerCase())) || 'Lớp';
-          const sttKey = allHeaders.find(h => ['stt', 'id'].includes(h.trim().toLowerCase())) || 'STT';
-          const subjectHeaders = allHeaders.filter(h => ![sttKey, nameKey, classKey].includes(h));
+          const rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: '' });
+          if (rows.length === 0) return;
+
+          let bestRowIndex = -1;
+          let maxSubjectCount = 0;
+          
+          for (let i = 0; i < Math.min(rows.length, 30); i++) {
+            const row = rows[i];
+            if (!row || !Array.isArray(row)) continue;
+            
+            let subjectCount = 0;
+            let hasNameField = false;
+            
+            row.forEach(cell => {
+              const cellStr = String(cell || '').trim().toLowerCase();
+              if (['họ tên', 'họ và tên', 'họ & tên', 'tên học sinh', 'tên'].includes(cellStr)) {
+                hasNameField = true;
+              }
+              if (isAcademicSubject(cellStr)) {
+                subjectCount++;
+              }
+            });
+
+            if (hasNameField && subjectCount >= 3) {
+              if (subjectCount > maxSubjectCount) {
+                maxSubjectCount = subjectCount;
+                bestRowIndex = i;
+              }
+            }
+          }
+
+          if (bestRowIndex === -1) {
+            for (let i = 0; i < Math.min(rows.length, 30); i++) {
+              const row = rows[i];
+              if (!row || !Array.isArray(row)) continue;
+              const rowStr = row.map(c => String(c || '').trim().toLowerCase());
+              if (rowStr.some(str => ['họ tên', 'họ và tên', 'họ & tên', 'tên học sinh', 'tên'].includes(str))) {
+                bestRowIndex = i;
+                break;
+              }
+            }
+          }
+
+          if (bestRowIndex === -1) {
+            bestRowIndex = 0;
+          }
+
+          const rawHeaderRow = rows[bestRowIndex];
+          if (!rawHeaderRow || !Array.isArray(rawHeaderRow)) return;
+
+          const headersList = rawHeaderRow.map((cell, idx) => {
+            const str = String(cell || '').trim();
+            return str !== '' ? str : `Col_${idx}`;
+          });
+
+          const nameKey = headersList.find(h => ['họ tên', 'họ và tên', 'họ & tên', 'tên học sinh', 'tên'].includes(h.trim().toLowerCase())) || headersList[3] || 'Họ và tên';
+          const classKey = headersList.find(h => ['lớp', 'lớp học'].includes(h.trim().toLowerCase())) || 'Lớp';
+          const sttKey = headersList.find(h => ['stt', 'id', 'số thứ tự'].includes(h.trim().toLowerCase())) || 'STT';
+
+          const subjectHeaders = headersList.filter(h => {
+            if ([sttKey, nameKey, classKey].includes(h)) return false;
+            return isAcademicSubject(h);
+          });
+
           subjectHeaders.forEach(h => newSubjectHeaders.add(h));
-          const processed = jsonData.map(item => {
-            if (!item[classKey]) item[classKey] = wsname;
-            return processRawStudentData(item, subjectHeaders, { nameKey, classKey, sttKey });
-          }).filter((s): s is StudentData => s !== null);
+
+          const processed: StudentData[] = [];
+          for (let j = bestRowIndex + 1; j < rows.length; j++) {
+            const dataRow = rows[j];
+            if (!dataRow || !Array.isArray(dataRow)) continue;
+
+            const item: any = {};
+            headersList.forEach((h, colIdx) => {
+              item[h] = dataRow[colIdx] !== undefined ? dataRow[colIdx] : '';
+            });
+
+            const cleanedName = String(item[nameKey] || '').trim();
+            const isCleanedNameValid = cleanedName && 
+              cleanedName.length >= 2 &&
+              !['họ tên', 'họ và tên', 'họ & tên', 'tên học sinh', 'tên'].includes(cleanedName.toLowerCase()) &&
+              !['ngày', 'tháng', 'năm', 'giáo viên chủ nhiệm', 'gvcn', 'hiệu trưởng', 'tổng cộng', 'người lập', 'lớp trưởng'].some(keyword => cleanedName.toLowerCase().includes(keyword));
+
+            if (isCleanedNameValid) {
+              if (!item[classKey]) item[classKey] = wsname;
+              
+              const student = processRawStudentData(item, subjectHeaders, { nameKey, classKey, sttKey });
+              if (student) {
+                processed.push(student);
+              }
+            }
+          }
+
           newProcessedStudents = [...newProcessedStudents, ...processed];
         });
-        setHeaders(prev => Array.from(new Set([...prev, ...Array.from(newSubjectHeaders)])));
-        setAllStudents(prev => [...prev, ...newProcessedStudents]);
-      } catch (err) { console.error(err); } finally { setLoading(false); e.target.value = ''; }
+
+        if (newProcessedStudents.length > 0) {
+          setHeaders(prev => Array.from(new Set([...prev, ...Array.from(newSubjectHeaders)])));
+          setAllStudents(prev => [...prev, ...newProcessedStudents]);
+        }
+      } catch (err) { 
+        console.error(err); 
+      } finally { 
+        setLoading(false); 
+        e.target.value = ''; 
+      }
     };
     reader.readAsArrayBuffer(file);
   };
