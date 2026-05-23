@@ -40,10 +40,23 @@ import {
   User,
   HelpCircle,
   UserPlus,
-  Users
+  Users,
+  Copy,
+  Check,
+  PenTool
 } from 'lucide-react';
 import { StudentData, ClassStats, StudentClassification, SubjectScore } from './types';
-import { processRawStudentData, calculateClassificationAndGoals, getSubjectLevel, getRadarData } from './gradingService';
+import { 
+  processRawStudentData, 
+  calculateClassificationAndGoals, 
+  getSubjectLevel, 
+  getRadarData,
+  getAcademicLevel,
+  getCombinedComments,
+  getShortHocBaComment,
+  PHAM_CHAT_LIST,
+  NANG_LUC_LIST
+} from './gradingService';
 import { getPedagogicalAdvice } from './geminiService';
 import { 
   BarChart, 
@@ -112,7 +125,9 @@ const isSameSubject = (s1: string, s2: string): boolean => {
     ['gdcd', 'công dân', 'cong dan', 'kinh tế pháp luật', 'gdkt', 'ktpl', 'pl', 'gdkt&pl', 'gdkt & pl'],
     ['gdtc', 'thể dục', 'the duc', 'thể chất', 'giáo dục thể chất'],
     ['gdqp', 'gdqp&an', 'quốc phòng', 'gdqp-an', 'quốc phòng an ninh', 'qp&an'],
-    ['hđtn', 'hdtn', 'hđtn&hn', 'hoạt động trải nghiệm', 'trải nghiệm']
+    ['hđtn', 'hdtn', 'hđtn&hn', 'hoạt động trải nghiệm', 'trải nghiệm'],
+    ['công nghệ', 'cong nghe', 'c.nghệ', 'c.nghe', 'cn', 'c. nghệ', 'c công nghệ', 'cc nghệ'],
+    ['tin học', 'tin hoc', 'tin', 'tin.học', 'tinhọc']
   ];
   
   for (const list of aliases) {
@@ -191,7 +206,180 @@ const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<string>("SUMMARY"); 
   const [summaryViewMode, setSummaryViewMode] = useState<'OVERVIEW' | 'CLASS_WISE' | 'SUBJECT_WISE' | 'TEACHER_WISE'>('OVERVIEW');
   const [selectedStudentForCard, setSelectedStudentForCard] = useState<StudentData | null>(null);
+  const [commentingStudent, setCommentingStudent] = useState<StudentData | null>(null);
+  const [commentTab, setCommentTab] = useState<'COMBINED' | 'SHORT' | 'TRAITS'>('COMBINED');
+  const [copiedText, setCopiedText] = useState<string | null>(null);
   
+  const [fontSizeScale, setFontSizeScale] = useState<'normal' | 'large' | 'xlarge' | 'huge'>(() => {
+    try {
+      const saved = localStorage.getItem("grading_app_font_scale");
+      return (saved as any) || "normal";
+    } catch {
+      return "normal";
+    }
+  });
+
+  const [highContrast, setHighContrast] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("grading_app_high_contrast");
+      return saved === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const [presentationTheme, setPresentationTheme] = useState<'green-mint' | 'orange-pastel' | 'blue-sky' | 'default'>(() => {
+    try {
+      const saved = localStorage.getItem("grading_app_pres_theme");
+      // Default to 'green-mint' as requested by user first, very modern and elegant!
+      return (saved as any) || "green-mint";
+    } catch {
+      return "green-mint";
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("grading_app_font_scale", fontSizeScale);
+  }, [fontSizeScale]);
+
+  useEffect(() => {
+    localStorage.setItem("grading_app_high_contrast", String(highContrast));
+  }, [highContrast]);
+
+  useEffect(() => {
+    localStorage.setItem("grading_app_pres_theme", presentationTheme);
+  }, [presentationTheme]);
+  
+  const [customSubjectTargets, setCustomSubjectTargets] = useState<Record<string, {
+    htxsnvRate: number;
+    httRate: number;
+    htnvRate: number;
+    passRateReq: number;
+  }>>(() => {
+    try {
+      const saved = localStorage.getItem("grading_app_subject_targets");
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("grading_app_subject_targets", JSON.stringify(customSubjectTargets));
+  }, [customSubjectTargets]);
+
+  const getTargetForSubject = (subjName: string) => {
+    if (customSubjectTargets && customSubjectTargets[subjName]) {
+      return customSubjectTargets[subjName];
+    }
+    const matchedKey = Object.keys(customSubjectTargets || {}).find(k => isSameSubject(k, subjName));
+    if (matchedKey) {
+      return customSubjectTargets[matchedKey];
+    }
+    const groupNum = getSubjectGroup(subjName);
+    if (groupNum === 1) {
+      return { htxsnvRate: 65, httRate: 55, htnvRate: 45, passRateReq: 100 };
+    } else if (groupNum === 2) {
+      return { htxsnvRate: 80, httRate: 70, htnvRate: 55, passRateReq: 100 };
+    } else if (groupNum === 3) {
+      return { htxsnvRate: 85, httRate: 75, htnvRate: 65, passRateReq: 100 };
+    } else {
+      return { htxsnvRate: 92, httRate: 85, htnvRate: 75, passRateReq: 100 };
+    }
+  };
+
+  const uniqueSubjectsInSystem: string[] = useMemo(() => {
+    const subjectsSet = new Set<string>();
+    allStudents.forEach(s => {
+      if (s.scores) {
+        s.scores.forEach(sc => {
+          if (sc.name) {
+            subjectsSet.add(sc.name);
+          }
+        });
+      }
+    });
+    if (subjectsSet.size === 0) {
+      const defaults = ["Toán học", "Ngữ văn", "Ngoại ngữ", "Vật lí", "Hóa học", "Sinh học", "Lịch sử", "Địa lí", "Tin học", "Công nghệ", "Giáo dục Quốc phòng & An ninh", "Giáo dục Kinh tế & Pháp luật"];
+      defaults.forEach(d => subjectsSet.add(d));
+    }
+    return Array.from(subjectsSet).sort();
+  }, [allStudents]);
+
+  const updateSubjectTarget = (subj: string, field: string, val: number) => {
+    setCustomSubjectTargets(prev => {
+      const base = getTargetForSubject(subj);
+      return {
+        ...prev,
+        [subj]: {
+          htxsnvRate: field === 'htxsnvRate' ? val : base.htxsnvRate,
+          httRate: field === 'httRate' ? val : base.httRate,
+          htnvRate: field === 'htnvRate' ? val : base.htnvRate,
+          passRateReq: field === 'passRateReq' ? val : base.passRateReq
+        }
+      };
+    });
+  };
+
+  const handleTargetsExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const data = new Uint8Array(evt.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: 'array' });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rows = XLSX.utils.sheet_to_json<any>(ws);
+        
+        const newTargets = { ...customSubjectTargets };
+        rows.forEach((row: any) => {
+          const rawSubject = row["Môn học"] || row["Môn"] || row["Subject"] || row["môn học"] || row["môn"];
+          if (!rawSubject) return;
+          const subject = String(rawSubject).trim();
+          
+          const htxsnv = parseFloat(row["Xuất sắc"] || row["HTXSNV"] || row["Hoàn thành xuất sắc nhiệm vụ"] || row["Xuất sắc (%)"] || row["htxsnvRate"] || row["htxsnv"]);
+          const htt = parseFloat(row["Tốt"] || row["HTT"] || row["Hoàn thành tốt nhiệm vụ"] || row["Tốt (%)"] || row["httRate"] || row["htt"]);
+          const htnv = parseFloat(row["Nhiệm vụ"] || row["HTNV"] || row["Hoàn thành nhiệm vụ"] || row["Nhiệm vụ (%)"] || row["htnvRate"] || row["htnv"]);
+          const pass = parseFloat(row["Đạt"] || row["Chỉ tiêu Đạt"] || row["Tỷ lệ Đạt"] || row["Pass"] || row["passRateReq"] || row["pass"]);
+          
+          newTargets[subject] = {
+            htxsnvRate: isNaN(htxsnv) ? 80 : htxsnv,
+            httRate: isNaN(htt) ? 70 : htt,
+            htnvRate: isNaN(htnv) ? 55 : htnv,
+            passRateReq: isNaN(pass) ? 100 : pass
+          };
+        });
+        
+        setCustomSubjectTargets(newTargets);
+        alert("Tải lên chỉ tiêu theo môn thành công!");
+      } catch (err) {
+        console.error("Lỗi parse chỉ tiêu Excel:", err);
+        alert("Có lỗi xảy ra khi đọc file Excel chỉ tiêu. Hãy kiểm tra lại cấu trúc.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleExportTargetsExcel = () => {
+    const excelRows = uniqueSubjectsInSystem.map((subj: string) => {
+      const t = getTargetForSubject(subj);
+      return {
+        "Môn học": subj,
+        "Chỉ tiêu Đạt (%)": t.passRateReq,
+        "Mức Khá/Tốt đạt loại Xuất sắc (HTXSNV) (%)": t.htxsnvRate,
+        "Mức Khá/Tốt đạt loại Tốt (HTT) (%)": t.httRate,
+        "Mức Khá/Tốt đạt loại Nhiệm vụ (HTNV) (%)": t.htnvRate,
+      };
+    });
+    
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(excelRows);
+    XLSX.utils.book_append_sheet(wb, ws, "Chi_Tieu_Bo_Mon");
+    XLSX.writeFile(wb, "Chi_Tieu_Xep_Loai_Mon_Hoc.xlsx");
+  };
+
   const [aiAdvice, setAiAdvice] = useState<string>("");
   const [adviceSource, setAdviceSource] = useState<'AI' | 'Local' | null>(null);
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -532,9 +720,12 @@ const App: React.FC = () => {
       Object.entries(subjects).forEach(([subject, name]) => {
         const t = registerTeacher(name);
         if (t) {
-          const alreadyHas = t.subjectClasses.some(sc => sc.className === cls && sc.subjectName === subject);
+          const standardSubject = headers.find(h => isSameSubject(h, subject)) || subject;
+          const alreadyHas = t.subjectClasses.some(sc => 
+            sc.className === cls && isSameSubject(sc.subjectName, standardSubject)
+          );
           if (!alreadyHas) {
-            t.subjectClasses.push({ className: cls, subjectName: subject });
+            t.subjectClasses.push({ className: cls, subjectName: standardSubject });
           }
         }
       });
@@ -619,41 +810,15 @@ const App: React.FC = () => {
         const passCount = subjectScores.filter(v => v >= 5.0).length;
         const passRate = subTotal > 0 ? (passCount / subTotal) * 100 : 0;
 
-        const groupNum = getSubjectGroup(sc.subjectName);
+        const target = getTargetForSubject(sc.subjectName);
         let principalRating = "Không hoàn thành nhiệm vụ (KHTNV)";
-        if (passRate === 100) {
-          if (groupNum === 1) {
-            if (goodAndFairRate >= 65) {
-              principalRating = "Hoàn thành xuất sắc nhiệm vụ (HTXSNV)";
-            } else if (goodAndFairRate >= 55) {
-              principalRating = "Hoàn thành tốt nhiệm vụ (HTT)";
-            } else if (goodAndFairRate >= 45) {
-              principalRating = "Hoàn thành nhiệm vụ (HTNV)";
-            }
-          } else if (groupNum === 2) {
-            if (goodAndFairRate >= 80) {
-              principalRating = "Hoàn thành xuất sắc nhiệm vụ (HTXSNV)";
-            } else if (goodAndFairRate >= 70) {
-              principalRating = "Hoàn thành tốt nhiệm vụ (HTT)";
-            } else if (goodAndFairRate >= 55) {
-              principalRating = "Hoàn thành nhiệm vụ (HTNV)";
-            }
-          } else if (groupNum === 3) {
-            if (goodAndFairRate >= 85) {
-              principalRating = "Hoàn thành xuất sắc nhiệm vụ (HTXSNV)";
-            } else if (goodAndFairRate >= 75) {
-              principalRating = "Hoàn thành tốt nhiệm vụ (HTT)";
-            } else if (goodAndFairRate >= 65) {
-              principalRating = "Hoàn thành nhiệm vụ (HTNV)";
-            }
-          } else if (groupNum === 4) {
-            if (goodAndFairRate >= 92) {
-              principalRating = "Hoàn thành xuất sắc nhiệm vụ (HTXSNV)";
-            } else if (goodAndFairRate >= 85) {
-              principalRating = "Hoàn thành tốt nhiệm vụ (HTT)";
-            } else if (goodAndFairRate >= 75) {
-              principalRating = "Hoàn thành nhiệm vụ (HTNV)";
-            }
+        if (passRate >= target.passRateReq) {
+          if (goodAndFairRate >= target.htxsnvRate) {
+            principalRating = "Hoàn thành xuất sắc nhiệm vụ (HTXSNV)";
+          } else if (goodAndFairRate >= target.httRate) {
+            principalRating = "Hoàn thành tốt nhiệm vụ (HTT)";
+          } else if (goodAndFairRate >= target.htnvRate) {
+            principalRating = "Hoàn thành nhiệm vụ (HTNV)";
           }
         }
 
@@ -1077,19 +1242,11 @@ const App: React.FC = () => {
 
               const teacherVal = String(row[colIdx] || '').trim();
               if (teacherVal) {
-                newSubjectTeachers[className][h] = teacherVal;
-                
-                const matchedHeader = headers.find(exHeader => {
-                  const ex = exHeader.trim().toLowerCase();
-                  const cur = h.trim().toLowerCase();
-                  return ex === cur || 
-                    (ex === 'văn' && cur === 'ngữ văn') || 
-                    (ex === 'ngữ văn' && cur === 'văn') ||
-                    (ex === 'tiếng anh' && cur === 'anh') ||
-                    (ex === 'anh' && cur === 'tiếng anh');
-                });
+                const matchedHeader = headers.find(exHeader => isSameSubject(exHeader, h));
                 if (matchedHeader) {
                   newSubjectTeachers[className][matchedHeader] = teacherVal;
+                } else {
+                  newSubjectTeachers[className][h] = teacherVal;
                 }
               }
             });
@@ -1541,7 +1698,12 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col" translate="no">
+    <div className={`min-h-screen flex flex-col transition-all duration-500 ${
+      presentationTheme === 'green-mint' ? 'bg-[#ebfbf2]' :
+      presentationTheme === 'orange-pastel' ? 'bg-[#fff6ee]' :
+      presentationTheme === 'blue-sky' ? 'bg-[#f0f8ff]' :
+      'bg-slate-50'
+    }`} translate="no">
       {batchProgress && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
           <div className="bg-white p-10 rounded-[40px] shadow-2xl text-center space-y-6 max-w-sm w-full mx-4">
@@ -1699,6 +1861,331 @@ const App: React.FC = () => {
             <button onClick={() => setSelectedStudentForCard(null)} className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors z-20"><X className="w-5 h-5 text-slate-600" /></button>
             <div className="max-h-[90vh] overflow-y-auto"><CardUI student={selectedStudentForCard} innerRef={cardRef} /></div>
             <div className="p-8 bg-slate-50 flex gap-4"><button onClick={downloadStudentCard} disabled={exporting} className="flex-1 py-4 bg-indigo-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-indigo-700 transition shadow-xl shadow-indigo-100">{exporting ? <Loader2 className="w-5 h-4 animate-spin" /> : <ImageIcon className="w-5 h-5" />} Tải Ảnh Thẻ Radar</button><button onClick={() => setSelectedStudentForCard(null)} className="px-8 py-4 bg-white text-slate-600 rounded-2xl font-black text-sm border border-slate-200 hover:bg-slate-50 transition">Đóng</button></div>
+          </div>
+        </div>
+      )}
+
+      {commentingStudent && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="relative w-full max-w-4xl bg-white rounded-[40px] shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 duration-500 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="p-8 border-b flex items-center justify-between shrink-0 bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-emerald-500 rounded-2xl shadow-lg shadow-emerald-100">
+                  <PenTool className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-black text-slate-900">Gợi ý nhận xét học bạ tự động</h3>
+                  <p className="text-sm font-bold text-slate-400">
+                    Học sinh: <span className="text-indigo-600 font-extrabold">{commentingStudent.name}</span> (Lớp {commentingStudent.className})
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => {
+                  setCommentingStudent(null);
+                  setCopiedText(null);
+                }} 
+                className="p-3 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"
+                id="comment-close-btn"
+              >
+                <X className="w-6 h-6 text-slate-600" />
+              </button>
+            </div>
+
+            {/* Student Stats Bar */}
+            <div className="px-8 py-4 bg-indigo-50/50 border-b flex flex-wrap gap-4 items-center shrink-0">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Học lực (TT22):</span>
+                <span className="px-2.5 py-1 bg-indigo-100 text-indigo-700 rounded-lg text-xs font-black uppercase">
+                  {getAcademicLevel(commentingStudent.classification)}
+                </span>
+                <span className="text-xs text-slate-400">({commentingStudent.classification})</span>
+              </div>
+              <div className="w-px h-4 bg-slate-200 hidden sm:block"></div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">Rèn luyện (TT22):</span>
+                <span className="px-2.5 py-1 bg-amber-100 text-amber-700 rounded-lg text-xs font-black uppercase">
+                  {commentingStudent.conduct || 'Tốt'}
+                </span>
+              </div>
+              <div className="ml-auto flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1 rounded-xl text-xs font-bold">
+                <Sparkles className="w-4 h-4 text-emerald-500" /> Bản sư phạm chuẩn mực (Không dùng AI)
+              </div>
+            </div>
+
+            {/* Sidebar/Navigation tabs inside the modal */}
+            <div className="border-b px-8 shrink-0 flex gap-4 bg-slate-50/20">
+              <button
+                onClick={() => setCommentTab('COMBINED')}
+                className={`py-4 font-black text-sm relative transition-all ${
+                  commentTab === 'COMBINED' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Mẫu nhận xét kết hợp
+              </button>
+              <button
+                onClick={() => setCommentTab('SHORT')}
+                className={`py-4 font-black text-sm relative transition-all ${
+                  commentTab === 'SHORT' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                Mẫu ngắn ghi học bạ
+              </button>
+              <button
+                onClick={() => setCommentTab('TRAITS')}
+                className={`py-4 font-black text-sm relative transition-all ${
+                  commentTab === 'TRAITS' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-slate-400 hover:text-slate-600'
+                }`}
+              >
+                5 phẩm chất & 10 năng lực
+              </button>
+            </div>
+
+            {/* Modal Body Scroll Container */}
+            <div className="flex-1 overflow-y-auto p-8 bg-slate-50/30 space-y-6">
+              
+              {commentTab === 'COMBINED' && (() => {
+                const ac = getAcademicLevel(commentingStudent.classification);
+                const cd = commentingStudent.conduct || 'Tốt';
+                const list = getCombinedComments(ac, cd, commentingStudent.name);
+                return (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="p-4 bg-blue-50 text-blue-700 rounded-2xl border border-blue-100 flex items-start gap-3">
+                      <BookOpen className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider mb-0.5">Xác định tổ hợp logic</p>
+                        <p className="text-sm font-medium">Xếp vào tổ hợp: <strong>Học lực {ac} - Hạnh kiểm {cd}</strong>. Hệ thống hiển thị 3 mẫu nhận xét khác nhau cho bạn tùy ý lựa chọn sao chép:</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-6">
+                      {list.map((comment, index) => {
+                        const isCopied = copiedText === comment;
+                        return (
+                          <div 
+                            key={index} 
+                            className={`p-6 rounded-3xl border transition-all hover:shadow-md bg-white flex flex-col justify-between gap-4 ${
+                              isCopied ? 'border-emerald-300 bg-emerald-50/10' : 'border-slate-100'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-center justify-between mb-3">
+                                <span className="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-[10px] font-black uppercase">
+                                  Mẫu lựa chọn {index + 1}
+                                </span>
+                              </div>
+                              <p className="text-slate-800 text-sm leading-relaxed font-semibold">
+                                {comment}
+                              </p>
+                            </div>
+                            <div className="flex justify-end">
+                              <button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(comment);
+                                  setCopiedText(comment);
+                                  setTimeout(() => setCopiedText(null), 2000);
+                                }}
+                                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl transition-all font-black text-xs border ${
+                                  isCopied 
+                                    ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-100' 
+                                    : 'bg-indigo-50 text-indigo-700 border-indigo-100 hover:bg-indigo-100'
+                                }`}
+                              >
+                                {isCopied ? (
+                                  <>
+                                    <Check className="w-4 h-4" /> ✓ Đã sao chép
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-4 h-4" /> Sao chép nhanh
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {commentTab === 'SHORT' && (() => {
+                const ac = getAcademicLevel(commentingStudent.classification);
+                const comment = getShortHocBaComment(ac, commentingStudent.name);
+                const isCopied = copiedText === comment;
+                return (
+                  <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    <div className="p-4 bg-blue-50 text-blue-700 rounded-2xl border border-blue-100 flex items-start gap-3">
+                      <FileText className="w-5 h-5 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-wider mb-0.5">Mẫu nhận xét ngắn gọn theo quy chế</p>
+                        <p className="text-sm font-medium">Sử dụng tóm gọn kết quả tổng quát theo các mức định hướng của Thông tư 22 để ghi học bạ nhanh chóng:</p>
+                      </div>
+                    </div>
+
+                    <div 
+                      className={`p-8 rounded-3xl border transition-all hover:shadow-md bg-white flex flex-col justify-between gap-6 ${
+                        isCopied ? 'border-emerald-300 bg-emerald-50/10' : 'border-slate-100 shadow-sm'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-4">
+                          <span className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-[10px] font-black uppercase tracking-wider">
+                            Nhận xét Học bạ (Mức {ac})
+                          </span>
+                        </div>
+                        <p className="text-slate-800 text-base leading-relaxed font-extrabold text-indigo-900">
+                          {comment}
+                        </p>
+                      </div>
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(comment);
+                            setCopiedText(comment);
+                            setTimeout(() => setCopiedText(null), 2000);
+                          }}
+                          className={`inline-flex items-center gap-2 px-6 py-3 rounded-2xl transition-all font-black text-sm border ${
+                            isCopied 
+                              ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-100' 
+                              : 'bg-indigo-600 text-white border-indigo-600 hover:bg-indigo-700 shadow-lg shadow-indigo-100'
+                          }`}
+                        >
+                          {isCopied ? (
+                            <>
+                              <Check className="w-4.5 h-4.5" /> ✓ Đã sao chép
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-4.5 h-4.5" /> Sao chép nhanh
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {commentTab === 'TRAITS' && (() => {
+                const name = commentingStudent.name;
+                const repl = (txt: string) => txt.replace(/\{name\}/g, name);
+
+                return (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                    {/* Phẩm chất */}
+                    <div>
+                      <h4 className="text-base font-black text-slate-800 mb-4 flex items-center gap-2">
+                        <Award className="w-5 h-5 text-indigo-500" /> Nhận xét theo 5 phẩm chất chính
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {PHAM_CHAT_LIST.map((item, idx) => {
+                          const rawText = repl(item.text);
+                          const isCopied = copiedText === rawText;
+                          return (
+                            <div 
+                              key={idx} 
+                              className={`p-4 rounded-2xl border transition-all hover:shadow-xs bg-white flex flex-col justify-between gap-3 ${
+                                isCopied ? 'border-emerald-300 bg-emerald-50/10' : 'border-slate-100'
+                              }`}
+                            >
+                              <div>
+                                <span className="font-extrabold text-xs text-indigo-600 block mb-1">
+                                  Phẩm chất {item.key}
+                                </span>
+                                <p className="text-slate-700 text-xs leading-relaxed font-semibold">
+                                  {rawText}
+                                </p>
+                              </div>
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(rawText);
+                                    setCopiedText(rawText);
+                                    setTimeout(() => setCopiedText(null), 2000);
+                                  }}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-black text-[10px] border ${
+                                    isCopied 
+                                      ? 'bg-emerald-500 border-emerald-500 text-white' 
+                                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                  {isCopied ? 'Đã chép' : 'Sao chép'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Năng lực */}
+                    <div>
+                      <h4 className="text-base font-black text-slate-800 mb-4 flex items-center gap-2">
+                        <Target className="w-5 h-5 text-rose-500" /> Nhận xét theo các năng lực cốt lõi
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {NANG_LUC_LIST.map((item, idx) => {
+                          const rawText = repl(item.text);
+                          const isCopied = copiedText === rawText;
+                          return (
+                            <div 
+                              key={idx} 
+                              className={`p-4 rounded-2xl border transition-all hover:shadow-xs bg-white flex flex-col justify-between gap-3 ${
+                                isCopied ? 'border-emerald-300 bg-emerald-50/10' : 'border-slate-100'
+                              }`}
+                            >
+                              <div>
+                                <span className="font-extrabold text-xs text-rose-600 block mb-1">
+                                  Năng lực {item.key}
+                                </span>
+                                <p className="text-slate-700 text-xs leading-relaxed font-semibold">
+                                  {rawText}
+                                </p>
+                              </div>
+                              <div className="flex justify-end">
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(rawText);
+                                    setCopiedText(rawText);
+                                    setTimeout(() => setCopiedText(null), 2000);
+                                  }}
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all font-black text-[10px] border ${
+                                    isCopied 
+                                      ? 'bg-emerald-500 border-emerald-500 text-white' 
+                                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                                  }`}
+                                >
+                                  {isCopied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                  {isCopied ? 'Đã chép' : 'Sao chép'}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+            </div>
+
+            {/* Footer */}
+            <div className="p-8 bg-slate-50 border-t flex justify-end shrink-0">
+              <button 
+                onClick={() => {
+                  setCommentingStudent(null);
+                  setCopiedText(null);
+                }} 
+                className="px-10 py-4 bg-slate-800 text-white rounded-[20px] font-black text-sm hover:bg-slate-900 transition-all flex items-center gap-2 shadow-lg shadow-slate-100"
+              >
+                Hoàn tất rà soát
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1940,6 +2427,283 @@ const App: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-8 pedagogical-report" ref={reportRef}>
+              {/* Dynamic Style Injection for School Projectors & Accent Themes */}
+              <style dangerouslySetInnerHTML={{ __html: `
+                /* Ép tiêu đề bảng (table head) luôn có màu đen và cực kỳ rõ nét */
+                .pedagogical-report thead,
+                .pedagogical-report thead th,
+                .pedagogical-report th {
+                  color: #000000 !important;
+                  font-weight: 900 !important;
+                }
+
+                /* Ép toàn bộ các chữ viết màu xám nhạt và các con số mờ nhạt thành MÀU ĐEN ĐẬM để cực rõ nhìn từ xa */
+                .pedagogical-report .text-slate-400,
+                .pedagogical-report .text-slate-500,
+                .pedagogical-report .text-slate-600,
+                .pedagogical-report .text-gray-400,
+                .pedagogical-report .text-gray-400/90,
+                .pedagogical-report .text-gray-500,
+                .pedagogical-report .text-slate-500/85,
+                .pedagogical-report .text-slate-400/90,
+                .pedagogical-report .text-slate-500/80 {
+                  color: #000000 !important;
+                  font-weight: 700 !important;
+                }
+
+                /* Các nhãn nhỏ, nhãn phụ %, sĩ số phụ ghi chú màu xám cũng hiển thị đen tuyền nổi bật */
+                .pedagogical-report .text-[10px],
+                .pedagogical-report .text-[11px],
+                .pedagogical-report .text-[9px],
+                .pedagogical-report .text-xs,
+                .pedagogical-report span.text-slate-400,
+                .pedagogical-report block {
+                  color: #000000 !important;
+                  font-weight: 800 !important;
+                }
+
+                /* Đậm đà thêm cho các tiêu đề phụ, nhãn chỉ mục học lực */
+                .pedagogical-report .text-slate-700,
+                .pedagogical-report .text-gray-700 {
+                  color: #000000 !important;
+                  font-weight: 850 !important;
+                }
+
+                /* Nền của các hộp thẻ phụ (Card) và viền khi sử dụng phông máy chiếu */
+                ${presentationTheme !== 'default' ? `
+                  .pedagogical-report .bg-white {
+                    border: 2px solid rgba(0, 0, 0, 0.12) !important;
+                    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05) !important;
+                  }
+                  .pedagogical-report .border-slate-100, 
+                  .pedagogical-report .border-slate-200, 
+                  .pedagogical-report .border {
+                    border-color: rgba(0, 0, 0, 0.15) !important;
+                    border-width: 1.5px !important;
+                  }
+                ` : ''}
+
+                /* Font size scale overrides for presentation readability */
+                ${fontSizeScale === 'large' ? `
+                  .pedagogical-report, 
+                  .pedagogical-report table,
+                  .pedagogical-report tbody,
+                  .pedagogical-report th, 
+                  .pedagogical-report td, 
+                  .pedagogical-report p, 
+                  .pedagogical-report span, 
+                  .pedagogical-report div,
+                  .pedagogical-report h2,
+                  .pedagogical-report h3,
+                  .pedagogical-report h4,
+                  .pedagogical-report button {
+                    font-size: 1.15rem !important;
+                  }
+                  .pedagogical-report h2 { font-size: 2.2rem !important; }
+                  .pedagogical-report h3 { font-size: 1.65rem !important; }
+                  .pedagogical-report .text-xs { font-size: 0.95rem !important; }
+                  .pedagogical-report .text-[10px] { font-size: 0.9rem !important; }
+                  .pedagogical-report .text-[11px] { font-size: 0.95rem !important; }
+                  .pedagogical-report .text-[9px] { font-size: 0.85rem !important; }
+                ` : ''}
+                ${fontSizeScale === 'xlarge' ? `
+                  .pedagogical-report, 
+                  .pedagogical-report table,
+                  .pedagogical-report tbody,
+                  .pedagogical-report th, 
+                  .pedagogical-report td, 
+                  .pedagogical-report p, 
+                  .pedagogical-report span, 
+                  .pedagogical-report div,
+                  .pedagogical-report h2,
+                  .pedagogical-report h3,
+                  .pedagogical-report h4,
+                  .pedagogical-report button {
+                    font-size: 1.35rem !important;
+                  }
+                  .pedagogical-report h2 { font-size: 2.6rem !important; }
+                  .pedagogical-report h3 { font-size: 2.0rem !important; }
+                  .pedagogical-report .text-xs { font-size: 1.15rem !important; }
+                  .pedagogical-report .text-[10px] { font-size: 1.1rem !important; }
+                  .pedagogical-report .text-[11px] { font-size: 1.15rem !important; }
+                  .pedagogical-report .text-[9px] { font-size: 1.05rem !important; }
+                ` : ''}
+                ${fontSizeScale === 'huge' ? `
+                  .pedagogical-report, 
+                  .pedagogical-report table,
+                  .pedagogical-report tbody,
+                  .pedagogical-report th, 
+                  .pedagogical-report td, 
+                  .pedagogical-report p, 
+                  .pedagogical-report span, 
+                  .pedagogical-report div,
+                  .pedagogical-report h2,
+                  .pedagogical-report h3,
+                  .pedagogical-report h4,
+                  .pedagogical-report button {
+                    font-size: 1.6rem !important;
+                  }
+                  .pedagogical-report h2 { font-size: 3.2rem !important; }
+                  .pedagogical-report h3 { font-size: 2.5rem !important; }
+                  .pedagogical-report .text-xs { font-size: 1.35rem !important; }
+                  .pedagogical-report .text-[10px] { font-size: 1.3rem !important; }
+                  .pedagogical-report .text-[11px] { font-size: 1.35rem !important; }
+                  .pedagogical-report .text-[9px] { font-size: 1.25rem !important; }
+                ` : ''}
+                ${highContrast ? `
+                  /* High contrast overrides for washed-out school projectors */
+                  .pedagogical-report {
+                    background-color: #ffffff !important;
+                  }
+                  .pedagogical-report .bg-white {
+                    background-color: #ffffff !important;
+                    border: 2px solid #000000 !important;
+                  }
+                  .pedagogical-report .bg-slate-50, 
+                  .pedagogical-report .bg-slate-100, 
+                  .pedagogical-report .bg-slate-50/25, 
+                  .pedagogical-report .bg-indigo-50/20,
+                  .pedagogical-report .bg-slate-50/50 {
+                    background-color: #f1f5f9 !important;
+                    border-color: #000000 !important;
+                  }
+                  .pedagogical-report .text-slate-400,
+                  .pedagogical-report .text-slate-500,
+                  .pedagogical-report .text-slate-600,
+                  .pedagogical-report .text-slate-700,
+                  .pedagogical-report .text-gray-450,
+                  .pedagogical-report .text-gray-500 {
+                    color: #000000 !important;
+                    font-weight: 950 !important;
+                  }
+                  .pedagogical-report .text-slate-900,
+                  .pedagogical-report .text-slate-950,
+                  .pedagogical-report .text-indigo-950,
+                  .pedagogical-report .text-gray-900 {
+                    color: #000000 !important;
+                    font-weight: 950 !important;
+                  }
+                  .pedagogical-report .border,
+                  .pedagogical-report .border-slate-100,
+                  .pedagogical-report .border-slate-200 {
+                    border-color: #000000 !important;
+                    border-width: 2px !important;
+                  }
+                  .pedagogical-report table,
+                  .pedagogical-report th,
+                  .pedagogical-report td,
+                  .pedagogical-report tr,
+                  .pedagogical-report divide-y > * {
+                    border: 2px solid #000000 !important;
+                  }
+                  .pedagogical-report th {
+                    background-color: #cbd5e1 !important;
+                    color: #000000 !important;
+                    font-weight: 950 !important;
+                  }
+                  .pedagogical-report strong {
+                    font-weight: 950 !important;
+                    color: #000000 !important;
+                  }
+                  .pedagogical-report svg text {
+                    fill: #000000 !important;
+                    font-weight: 950 !important;
+                  }
+                ` : ''}
+              ` }} />
+
+              {/* PHƯƠNG ÁN NÂNG CẤP GIAO DIỆN TRÌNH CHIẾU HỌC ĐƯỜNG CHUYÊN NGHIỆP (Pedagogical & Classroom Projection Optimizer) */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-950 text-white rounded-[32px] p-6 shadow-xl border border-slate-800 no-print space-y-4">
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-2xl border border-indigo-500/30">
+                      <Sparkles className="w-5 h-5 animate-pulse" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-wider text-indigo-300">Công cụ tối ưu trình chiếu học đường</h3>
+                      <p className="text-xs text-slate-300">Nền dịu mắt cùng giải pháp khử chữ xám mờ nhạt sang chữ đen đậm sắc nét!</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3.5 animate-in fade-in duration-500">
+                    {/* Background Soft Accent Color Selector */}
+                    <div className="flex items-center gap-1.5 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                      <span className="text-[10px] uppercase font-black text-slate-300 px-2">Phông nền:</span>
+                      <button 
+                        onClick={() => setPresentationTheme('green-mint')} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${presentationTheme === 'green-mint' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-950' : 'text-slate-300 hover:text-white hover:bg-slate-700/50'}`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] border border-white/20"></span>
+                        <span>Xanh Mint 🌿</span>
+                      </button>
+                      <button 
+                        onClick={() => setPresentationTheme('orange-pastel')} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${presentationTheme === 'orange-pastel' ? 'bg-orange-500 text-white shadow-md shadow-orange-950' : 'text-slate-300 hover:text-white hover:bg-slate-700/50'}`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#f97316] border border-white/20"></span>
+                        <span>Cam Nhạt 🍑</span>
+                      </button>
+                      <button 
+                        onClick={() => setPresentationTheme('blue-sky')} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${presentationTheme === 'blue-sky' ? 'bg-sky-500 text-white shadow-md shadow-sky-950' : 'text-slate-300 hover:text-white hover:bg-slate-700/50'}`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-[#3b82f6] border border-white/20"></span>
+                        <span>Xanh Dương 🔹</span>
+                      </button>
+                      <button 
+                        onClick={() => setPresentationTheme('default')} 
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all ${presentationTheme === 'default' ? 'bg-slate-600 text-white shadow-sm' : 'text-slate-300 hover:text-white hover:bg-slate-700/50'}`}
+                      >
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-400 border border-white/20"></span>
+                        <span>Gốc ⚙️</span>
+                      </button>
+                    </div>
+
+                    {/* Size Selector */}
+                    <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700">
+                      <span className="text-[10px] uppercase font-black text-slate-300 px-2 hidden sm:inline">Cỡ:</span>
+                      <button 
+                        onClick={() => setFontSizeScale('normal')} 
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${fontSizeScale === 'normal' ? 'bg-slate-600 text-white' : 'text-slate-300 hover:text-white'}`}
+                      >
+                        1.0x
+                      </button>
+                      <button 
+                        onClick={() => setFontSizeScale('large')} 
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${fontSizeScale === 'large' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
+                      >
+                        1.2x
+                      </button>
+                      <button 
+                        onClick={() => setFontSizeScale('xlarge')} 
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${fontSizeScale === 'xlarge' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
+                      >
+                        1.4x
+                      </button>
+                      <button 
+                        onClick={() => setFontSizeScale('huge')} 
+                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${fontSizeScale === 'huge' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-300 hover:text-white'}`}
+                      >
+                        1.6x 🔥
+                      </button>
+                    </div>
+
+                    {/* High Contrast Toggle */}
+                    <button 
+                      onClick={() => setHighContrast(!highContrast)} 
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black transition-all border ${
+                        highContrast 
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/20' 
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:text-white hover:bg-slate-700'
+                      }`}
+                    >
+                      <Zap className={`w-3.5 h-3.5 ${highContrast ? 'fill-current text-slate-950' : 'text-amber-400'}`} />
+                      <span>{highContrast ? "Nét máy chiếu: ĐÃ BẬT" : "Nét máy chiếu: TẮT"}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
               <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
                   {activeTab !== "SUMMARY" && (
@@ -2028,7 +2792,7 @@ const App: React.FC = () => {
                   </div>
                   <div className="overflow-x-auto max-h-[350px] overflow-y-auto custom-scrollbar">
                     <table className="w-full text-left">
-                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b select-none">
+                      <thead className="bg-slate-50 text-[10px] font-black text-black uppercase tracking-widest border-b select-none">
                         <tr>
                           <th className="px-8 py-4">Học sinh</th>
                           <th className="px-8 py-4">Hạnh kiểm (Cả năm)</th>
@@ -2161,7 +2925,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50/50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b">
+                    <thead className="bg-slate-50/50 text-[10px] font-black text-black uppercase tracking-widest border-b">
                       <tr><th className="px-8 py-5">Học sinh</th><th className="px-8 py-5">Xếp loại</th><th className="px-8 py-5">Môn cần khắc phục</th><th className="px-8 py-5">Dự báo</th><th className="px-8 py-5 text-right no-print">Thao tác</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
@@ -2183,7 +2947,12 @@ const App: React.FC = () => {
                             )}
                           </td>
                           <td className="px-8 py-6"><button onClick={() => setSimulatingStudent(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-amber-50 text-amber-700 rounded-xl hover:bg-amber-100 transition-all font-black text-xs border border-amber-100"><SlidersHorizontal className="w-4 h-4" /> Mô phỏng</button></td>
-                          <td className="px-8 py-6 text-right no-print"><button onClick={() => setSelectedStudentForCard(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all font-black text-xs border border-indigo-100"><BrainCircuit className="w-4 h-4" /> Radar</button></td>
+                          <td className="px-8 py-6 text-right no-print">
+                            <div className="flex items-center justify-end gap-2">
+                              <button onClick={() => setCommentingStudent(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-700 rounded-xl hover:bg-emerald-600 hover:text-white transition-all font-black text-xs border border-emerald-100"><PenTool className="w-4 h-4" /> Nhận xét</button>
+                              <button onClick={() => setSelectedStudentForCard(s)} className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all font-black text-xs border border-indigo-100"><BrainCircuit className="w-4 h-4" /> Radar</button>
+                            </div>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -2258,16 +3027,15 @@ const App: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b select-none">
+                    <thead className="bg-slate-50 text-[10px] font-black text-black uppercase tracking-widest border-b select-none">
                       <tr>
                         <th className="px-5 py-5 text-center w-16">STT</th>
                         <th className="px-6 py-5">Tên lớp</th>
                         <th className="px-4 py-5 text-center">Sĩ số</th>
                         <th className="px-4 py-5 text-center">GPA Lớp</th>
-                        <th className="px-4 py-5 text-center">Tốt + TC Tốt</th>
-                        <th className="px-4 py-5 text-center">Khá + TC Khá</th>
-                        <th className="px-4 py-5 text-center">Đạt</th>
-                        <th className="px-4 py-5 text-center bg-orange-500/5 text-orange-700">Nguy cơ</th>
+                        <th className="px-4 py-5 text-center">Tốt</th>
+                        <th className="px-4 py-5 text-center">Khá + TC Tốt</th>
+                        <th className="px-4 py-5 text-center">Đạt + TC Khá & Nguy cơ</th>
                         <th className="px-4 py-5 text-center bg-rose-500/5 text-rose-700">Nguy hiểm</th>
                         <th className="px-6 py-5 text-right">Lên lớp %</th>
                         <th className="px-6 py-5 text-center no-print">Thao tác</th>
@@ -2275,12 +3043,15 @@ const App: React.FC = () => {
                     </thead>
                     <tbody className="divide-y divide-slate-50 text-xs">
                       {schoolDetailedStats.map((classStat, index) => {
-                        const totTC = classStat.totCount + classStat.tiemCanTotCount;
-                        const totTCRate = classStat.total > 0 ? (totTC / classStat.total) * 100 : 0;
-                        const khaTC = classStat.khaCount + classStat.tiemCanKhaCount;
-                        const khaTCRate = classStat.total > 0 ? (khaTC / classStat.total) * 100 : 0;
-                        const datRate = classStat.total > 0 ? (classStat.datCount / classStat.total) * 100 : 0;
-                        const nguyCoRate = classStat.total > 0 ? (classStat.tiemCanDatCount / classStat.total) * 100 : 0;
+                        const totVal = classStat.totCount;
+                        const totRate = classStat.total > 0 ? (totVal / classStat.total) * 100 : 0;
+                        
+                        const khaTCVal = classStat.khaCount + classStat.tiemCanTotCount;
+                        const khaTCRate = classStat.total > 0 ? (khaTCVal / classStat.total) * 100 : 0;
+                        
+                        const datTCNewVal = classStat.datCount + classStat.tiemCanKhaCount + classStat.tiemCanDatCount;
+                        const datRate = classStat.total > 0 ? (datTCNewVal / classStat.total) * 100 : 0;
+                        
                         const nguyHiemRate = classStat.total > 0 ? (classStat.chuaDatCount / classStat.total) * 100 : 0;
 
                         return (
@@ -2295,20 +3066,16 @@ const App: React.FC = () => {
                             <td className="px-4 py-5 text-center font-bold text-slate-900">{classStat.total} HS</td>
                             <td className="px-4 py-5 text-center font-extrabold text-indigo-600">{classStat.avgClassScore.toFixed(2)}</td>
                             <td className="px-4 py-5 text-center">
-                              <span className="text-emerald-600 font-extrabold">{totTC}</span>
-                              <span className="text-[10px] text-slate-400 block font-normal">{totTCRate.toFixed(0)}%</span>
+                              <span className="text-emerald-600 font-extrabold">{totVal}</span>
+                              <span className="text-[10px] text-slate-400 block font-normal">{totRate.toFixed(0)}%</span>
                             </td>
                             <td className="px-4 py-5 text-center">
-                              <span className="text-indigo-600 font-extrabold">{khaTC}</span>
+                              <span className="text-indigo-600 font-extrabold">{khaTCVal}</span>
                               <span className="text-[10px] text-slate-400 block font-normal">{khaTCRate.toFixed(0)}%</span>
                             </td>
                             <td className="px-4 py-5 text-center">
-                              <span className="text-amber-600 font-extrabold">{classStat.datCount}</span>
+                              <span className="text-amber-600 font-extrabold">{datTCNewVal}</span>
                               <span className="text-[10px] text-slate-400 block font-normal">{datRate.toFixed(0)}%</span>
-                            </td>
-                            <td className="px-4 py-5 text-center bg-orange-500/5 font-extrabold text-orange-600">
-                              <span>{classStat.tiemCanDatCount}</span>
-                              <span className="text-[10px] text-orange-400 block font-normal">{nguyCoRate.toFixed(0)}%</span>
                             </td>
                             <td className="px-4 py-5 text-center bg-rose-500/5 font-extrabold text-rose-600">
                               <span>{classStat.chuaDatCount}</span>
@@ -2394,7 +3161,7 @@ const App: React.FC = () => {
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b select-none">
+                    <thead className="bg-slate-50 text-[10px] font-black text-black uppercase tracking-widest border-b select-none">
                       <tr>
                         <th className="px-6 py-5">Tên môn học</th>
                         <th className="px-6 py-5 text-center">Điểm TB môn</th>
@@ -2519,49 +3286,152 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              {/* Khuyên dùng / BGH Tips Banner */}
-              <div className="bg-gradient-to-r from-teal-900 to-emerald-950 rounded-[40px] p-8 shadow-xl relative overflow-hidden text-white">
-                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div className="space-y-2 flex-1">
+              {/* QUẢL LÝ CHỈ TIÊU & ĐỊNH MỨC XẾP LOẠI THEO MÔN */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 rounded-[40px] p-8 shadow-xl relative overflow-hidden text-white">
+                <div className="absolute top-0 right-0 p-8 opacity-5">
+                  <SlidersHorizontal className="w-48 h-48 text-indigo-200" />
+                </div>
+                
+                <div className="relative z-10 flex flex-col xl:flex-row gap-8 items-start xl:items-center justify-between pb-6 border-b border-white/10">
+                  <div className="space-y-2 max-w-2xl">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-emerald-300" />
-                      <span className="text-xs font-black uppercase tracking-widest text-emerald-300">Cơ chế Xếp loại Giáo viên - Tối ưu 4 Nhóm Môn (Thông tư 22)</span>
+                      <Sparkles className="w-5 h-5 text-amber-400" />
+                      <span className="text-xs font-black uppercase tracking-widest text-amber-400">Thiết lập Chỉ tiêu linh hoạt cho các năm học</span>
                     </div>
-                    <h3 className="text-xl font-black tracking-tight">Cơ chế Đánh giá Công tác Giảng dạy & Chủ nhiệm</h3>
-                    <p className="text-xs text-emerald-100/80 font-semibold leading-relaxed">
-                      Điểm xếp loại tự động cho từng giáo viên dựa trên <strong>tỷ lệ Khá + Tốt (≥ 6.5)</strong> thực tế lớp giảng dạy, đi kèm điều kiện tiên quyết: <strong>tỷ lệ Đạt (≥ 5.0) phải đạt 100%</strong>. Nếu có học sinh Yếu/Kém (&lt; 5.0), giáo viên sẽ được thống kê xếp loại là <strong>KHTNV</strong>.
+                    <h3 className="text-2xl font-black tracking-tight text-white">Quản lý Chỉ tiêu Xếp loại theo Bộ môn</h3>
+                    <p className="text-xs text-slate-300 font-semibold leading-relaxed">
+                      Thay thế cơ chế xếp loại cố định bằng hệ thống chỉ tiêu động. Thầy cô có thể tải lên tệp Excel chỉ tiêu của năm học mới, hoặc tuỳ chỉnh nhanh tỷ lệ Khá/Tốt đầu ra và yêu cầu tỷ lệ Đạt (≥ 5.0) ngay tại bảng bên dưới. Dữ liệu xếp loại giáo viên sẽ tự động cập nhật lập tức.
                     </p>
                   </div>
-                  <div className="bg-white/10 px-5 py-3 rounded-2xl border border-white/15 backdrop-blur-md text-xs font-bold text-center shrink-0">
-                    <span className="block text-[9px] uppercase tracking-wider text-emerald-200 font-black">Nạp nhanh phân công</span>
-                    <label className="text-emerald-300 cursor-pointer hover:underline block mt-1 font-black">Nạp Excel Phân Công ➜<input type="file" className="hidden" accept=".xlsx, .xls" onChange={handleTeacherAssignmentUpload} /></label>
+
+                  <div className="flex flex-wrap gap-3 shrink-0">
+                    <button 
+                      onClick={handleExportTargetsExcel}
+                      className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-2xl border border-white/10 transition text-xs font-black flex items-center gap-2"
+                    >
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                      <span>Xuất Bản mẫu / Tải Chỉ tiêu (.xlsx)</span>
+                    </button>
+
+                    <label className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl cursor-pointer border border-indigo-500 transition text-xs font-black flex items-center gap-2">
+                      <Upload className="w-4 h-4 text-white" />
+                      <span>Up Chỉ Tiêu Excel (Nạp File)</span>
+                      <input 
+                        type="file" 
+                        className="hidden" 
+                        accept=".xlsx, .xls" 
+                        onChange={handleTargetsExcelUpload} 
+                      />
+                    </label>
+
+                    {Object.keys(customSubjectTargets).length > 0 && (
+                      <button 
+                        onClick={() => {
+                          if (confirm("Thầy cô có chắc chắn muốn xóa tất cả chỉ tiêu tùy chỉnh và khôi phục về cấu hình Thông tư 22 mặc định?")) {
+                            setCustomSubjectTargets({});
+                          }
+                        }}
+                        className="px-4 py-2.5 bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 rounded-2xl border border-rose-500/20 transition text-xs font-black flex items-center gap-2"
+                      >
+                        <RefreshCcw className="w-4 h-4" />
+                        <span>Khôi phục Mặc định</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="mt-6 pt-6 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-[11px] text-emerald-100/90 font-medium">
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
-                    <p className="font-extrabold text-emerald-300">1. Đặc thù khó khăn (Anh, Sinh, Sử):</p>
-                    <p className="text-[10px] opacity-90">• HTXSNV: Khá+Tốt ≥ 65%</p>
-                    <p className="text-[10px] opacity-90">• HTT: 55% → &lt; 65%</p>
-                    <p className="text-[10px] opacity-90">• HTNV: 45% → &lt; 55%</p>
+                {/* Grid controls */}
+                <div className="mt-6 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-black text-indigo-200">
+                      Danh sách chỉ tiêu bộ môn hiện hành ({uniqueSubjectsInSystem.length} môn & phân môn)
+                    </h4>
+                    <span className="text-[10px] text-slate-400 font-bold italic">
+                      * Nhập trực tiếp chỉ số mới để cập nhật nhanh, hệ thống tự lưu
+                    </span>
                   </div>
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
-                    <p className="font-extrabold text-emerald-300">2. Cơ bản & Khoa học (Toán, Văn, Lý, Hóa, Địa):</p>
-                    <p className="text-[10px] opacity-90">• HTXSNV: Khá+Tốt ≥ 80%</p>
-                    <p className="text-[10px] opacity-90">• HTT: 70% → &lt; 80%</p>
-                    <p className="text-[10px] opacity-90">• HTNV: 55% → &lt; 70%</p>
-                  </div>
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
-                    <p className="font-extrabold text-emerald-300">3. Ứng dụng & Thực hành (Tin, GD KT&PL):</p>
-                    <p className="text-[10px] opacity-90">• HTXSNV: Khá+Tốt ≥ 85%</p>
-                    <p className="text-[10px] opacity-90">• HTT: 75% → &lt; 85%</p>
-                    <p className="text-[10px] opacity-90">• HTNV: 65% → &lt; 75%</p>
-                  </div>
-                  <div className="bg-white/5 p-3 rounded-xl border border-white/5 space-y-1">
-                    <p className="font-extrabold text-emerald-300">4. Năng khiếu & Đặc biệt (CN, GDQP, TC):</p>
-                    <p className="text-[10px] opacity-90">• HTXSNV: Khá+Tốt ≥ 92%</p>
-                    <p className="text-[10px] opacity-90">• HTT: 85% → &lt; 92%</p>
-                    <p className="text-[10px] opacity-90">• HTNV: 75% → &lt; 85%</p>
+
+                  <div className="overflow-x-auto max-h-[350px] overflow-y-auto rounded-3xl border border-white/5 bg-slate-950/40 backdrop-blur-md">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-900/80 sticky top-0 border-b border-white/5 select-none text-[10px] uppercase font-black tracking-widest text-indigo-300">
+                        <tr>
+                          <th className="px-5 py-3">Môn học / Hoạt động GD</th>
+                          <th className="px-5 py-3 text-center">Trạng thái</th>
+                          <th className="px-5 py-3 text-center">Yêu cầu tỷ lệ Đạt (≥ 5.0) (%)</th>
+                          <th className="px-5 py-3 text-center">Tỷ lệ Khá + Giỏi đạt Xuất sắc (HTXSNV) (%)</th>
+                          <th className="px-5 py-3 text-center">Tỷ lệ Khá + Giỏi đạt Tốt (HTT) (%)</th>
+                          <th className="px-5 py-3 text-center">Tỷ lệ Khá + Giỏi đạt Nhiệm vụ (HTNV) (%)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5 font-semibold text-slate-300">
+                        {uniqueSubjectsInSystem.map(subj => {
+                          const t = getTargetForSubject(subj);
+                          const isCustom = !!customSubjectTargets[subj];
+                          return (
+                            <tr key={subj} className="hover:bg-white/5 transition">
+                              <td className="px-5 py-3 font-extrabold text-white">
+                                {subj}
+                              </td>
+                              <td className="px-5 py-3 text-center">
+                                {isCustom ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Tùy biến</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Mặc định</span>
+                                )}
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex justify-center items-center">
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={t.passRateReq}
+                                    onChange={(e) => updateSubjectTarget(subj, 'passRateReq', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex justify-center items-center">
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={t.htxsnvRate}
+                                    onChange={(e) => updateSubjectTarget(subj, 'htxsnvRate', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex justify-center items-center">
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={t.httRate}
+                                    onChange={(e) => updateSubjectTarget(subj, 'httRate', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                  />
+                                </div>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex justify-center items-center">
+                                  <input 
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    value={t.htnvRate}
+                                    onChange={(e) => updateSubjectTarget(subj, 'htnvRate', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                  />
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -2584,7 +3454,7 @@ const App: React.FC = () => {
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b select-none">
+                      <thead className="bg-slate-50 text-[10px] font-black text-black uppercase tracking-widest border-b select-none">
                         <tr>
                           <th className="px-6 py-5">Tên Giáo viên</th>
                           <th className="px-6 py-5">Nhiệm vụ Phân công</th>
@@ -2823,10 +3693,15 @@ const App: React.FC = () => {
       )}
         </main>
       </div>
-      <footer className="bg-white border-t p-6 no-print">
-         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-end items-center gap-4">
-            <div className="text-slate-300 text-[10px] font-black uppercase tracking-widest">
-               © {new Date().getFullYear()} - {APP_NAME}
+      <footer className="bg-slate-50 border-t p-6 no-print">
+         <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div className="text-slate-400 text-xs font-semibold">
+               {APP_NAME} - {APP_SUBTITLE}
+            </div>
+            <div className="text-slate-500 text-[11px] font-bold uppercase tracking-wider flex items-center gap-2">
+               <span>Bản quyền Edulab Ai 2026</span>
+               <span className="text-slate-300">|</span>
+               <span className="text-indigo-600 font-extrabold">Hotline: 0989550411</span>
             </div>
          </div>
       </footer>
