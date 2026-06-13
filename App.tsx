@@ -335,21 +335,64 @@ const App: React.FC = () => {
         
         const newTargets = { ...customSubjectTargets };
         rows.forEach((row: any) => {
-          const rawSubject = row["Môn học"] || row["Môn"] || row["Subject"] || row["môn học"] || row["môn"];
-          if (!rawSubject) return;
-          const subject = String(rawSubject).trim();
-          
-          const htxsnv = parseFloat(row["Xuất sắc"] || row["HTXSNV"] || row["Hoàn thành xuất sắc nhiệm vụ"] || row["Xuất sắc (%)"] || row["htxsnvRate"] || row["htxsnv"]);
-          const htt = parseFloat(row["Tốt"] || row["HTT"] || row["Hoàn thành tốt nhiệm vụ"] || row["Tốt (%)"] || row["httRate"] || row["htt"]);
-          const htnv = parseFloat(row["Nhiệm vụ"] || row["HTNV"] || row["Hoàn thành nhiệm vụ"] || row["Nhiệm vụ (%)"] || row["htnvRate"] || row["htnv"]);
-          const pass = parseFloat(row["Đạt"] || row["Chỉ tiêu Đạt"] || row["Tỷ lệ Đạt"] || row["Pass"] || row["passRateReq"] || row["pass"]);
-          
-          newTargets[subject] = {
-            htxsnvRate: isNaN(htxsnv) ? 80 : htxsnv,
-            httRate: isNaN(htt) ? 70 : htt,
-            htnvRate: isNaN(htnv) ? 55 : htnv,
-            passRateReq: isNaN(pass) ? 100 : pass
-          };
+          // Dynamic search for keys to accommodate header variations (e.g., exact matches, partial matches, accents or custom additions)
+          let subject: string | undefined = undefined;
+          let htxsnvValue: number | undefined = undefined;
+          let httValue: number | undefined = undefined;
+          let htnvValue: number | undefined = undefined;
+          let passValue: number | undefined = undefined;
+
+          Object.keys(row).forEach((key) => {
+            const keyLower = key.toLowerCase();
+            const val = parseFloat(row[key]);
+
+            if (keyLower.includes("môn") || keyLower.includes("subject")) {
+              subject = String(row[key]).trim();
+            }
+
+            if (!isNaN(val)) {
+              if (keyLower.includes("xuất sắc") || keyLower.includes("htxsnv")) {
+                htxsnvValue = val;
+              } else if (keyLower.includes("tốt") || keyLower.includes("htt")) {
+                if (!keyLower.includes("xuất sắc") && !keyLower.includes("htxsnv")) {
+                  httValue = val;
+                }
+              } else if (keyLower.includes("nhiệm vụ") || keyLower.includes("htnv")) {
+                htnvValue = val;
+              } else if (keyLower.includes("đạt") || keyLower.includes("pass")) {
+                if (
+                  !keyLower.includes("xuất sắc") &&
+                  !keyLower.includes("htxsnv") &&
+                  !keyLower.includes("tốt") &&
+                  !keyLower.includes("htt") &&
+                  !keyLower.includes("nhiệm vụ") &&
+                  !keyLower.includes("htnv")
+                ) {
+                  passValue = val;
+                }
+              }
+            }
+          });
+
+          // Fallbacks to standard property access in case dynamic search missed something
+          if (!subject) {
+            const rawSubject = row["Môn học"] || row["Môn"] || row["Subject"] || row["môn học"] || row["môn"];
+            if (rawSubject) subject = String(rawSubject).trim();
+          }
+
+          if (subject) {
+            const htxsnv = htxsnvValue !== undefined ? htxsnvValue : parseFloat(row["Xuất sắc"] || row["HTXSNV"] || row["Hoàn thành xuất sắc nhiệm vụ"] || row["Xuất sắc (%)"] || row["htxsnvRate"] || row["htxsnv"]);
+            const htt = httValue !== undefined ? httValue : parseFloat(row["Tốt"] || row["HTT"] || row["Hoàn thành tốt nhiệm vụ"] || row["Tốt (%)"] || row["httRate"] || row["htt"]);
+            const htnv = htnvValue !== undefined ? htnvValue : parseFloat(row["Nhiệm vụ"] || row["HTNV"] || row["Hoàn thành nhiệm vụ"] || row["Nhiệm vụ (%)"] || row["htnvRate"] || row["htnv"]);
+            const pass = passValue !== undefined ? passValue : parseFloat(row["Đạt"] || row["Chỉ tiêu Đạt"] || row["Tỷ lệ Đạt"] || row["Pass"] || row["passRateReq"] || row["pass"]);
+
+            newTargets[subject] = {
+              htxsnvRate: isNaN(htxsnv) ? 80 : htxsnv,
+              httRate: isNaN(htt) ? 70 : htt,
+              htnvRate: isNaN(htnv) ? 55 : htnv,
+              passRateReq: isNaN(pass) ? 100 : pass
+            };
+          }
         });
         
         setCustomSubjectTargets(newTargets);
@@ -2430,11 +2473,18 @@ const App: React.FC = () => {
               {/* Dynamic Style Injection for School Projectors & Accent Themes */}
               <style dangerouslySetInnerHTML={{ __html: `
                 /* Ép tiêu đề bảng (table head) luôn có màu đen và cực kỳ rõ nét */
-                .pedagogical-report thead,
-                .pedagogical-report thead th,
-                .pedagogical-report th {
+                .pedagogical-report thead:not(.keep-white),
+                .pedagogical-report thead:not(.keep-white) th,
+                .pedagogical-report th:not(.text-white) {
                   color: #000000 !important;
                   font-weight: 900 !important;
+                }
+
+                /* Đảm bảo các phần tử mang class text-white luôn có màu trắng rõ nét */
+                .pedagogical-report th.text-white,
+                .pedagogical-report .text-white,
+                .pedagogical-report .text-white * {
+                  color: #ffffff !important;
                 }
 
                 /* Ép toàn bộ các chữ viết màu xám nhạt và các con số mờ nhạt thành MÀU ĐEN ĐẬM để cực rõ nhìn từ xa */
@@ -3287,33 +3337,33 @@ const App: React.FC = () => {
               </div>
 
               {/* QUẢL LÝ CHỈ TIÊU & ĐỊNH MỨC XẾP LOẠI THEO MÔN */}
-              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-950 rounded-[40px] p-8 shadow-xl relative overflow-hidden text-white">
-                <div className="absolute top-0 right-0 p-8 opacity-5">
-                  <SlidersHorizontal className="w-48 h-48 text-indigo-200" />
+              <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 relative overflow-hidden text-slate-900">
+                <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
+                  <SlidersHorizontal className="w-48 h-48 text-slate-900" />
                 </div>
                 
-                <div className="relative z-10 flex flex-col xl:flex-row gap-8 items-start xl:items-center justify-between pb-6 border-b border-white/10">
+                <div className="relative z-10 flex flex-col xl:flex-row gap-8 items-start xl:items-center justify-between pb-6 border-b border-slate-100">
                   <div className="space-y-2 max-w-2xl">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-amber-400" />
-                      <span className="text-xs font-black uppercase tracking-widest text-amber-400">Thiết lập Chỉ tiêu linh hoạt cho các năm học</span>
+                      <Sparkles className="w-5 h-5 text-amber-500 animate-pulse" />
+                      <span className="text-xs font-black uppercase tracking-widest text-amber-600">Thiết lập Chỉ tiêu linh hoạt cho các năm học</span>
                     </div>
-                    <h3 className="text-2xl font-black tracking-tight text-white">Quản lý Chỉ tiêu Xếp loại theo Bộ môn</h3>
-                    <p className="text-xs text-slate-300 font-semibold leading-relaxed">
+                    <h3 className="text-2xl font-black tracking-tight text-slate-900">Quản lý Chỉ tiêu Xếp loại theo Bộ môn</h3>
+                    <p className="text-xs text-slate-500 font-semibold leading-relaxed">
                       Thay thế cơ chế xếp loại cố định bằng hệ thống chỉ tiêu động. Thầy cô có thể tải lên tệp Excel chỉ tiêu của năm học mới, hoặc tuỳ chỉnh nhanh tỷ lệ Khá/Tốt đầu ra và yêu cầu tỷ lệ Đạt (≥ 5.0) ngay tại bảng bên dưới. Dữ liệu xếp loại giáo viên sẽ tự động cập nhật lập tức.
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-3 shrink-0">
+                  <div className="flex flex-wrap gap-3 shrink-0 z-10">
                     <button 
                       onClick={handleExportTargetsExcel}
-                      className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-2xl border border-white/10 transition text-xs font-black flex items-center gap-2"
+                      className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 rounded-2xl border border-slate-200 transition text-xs font-black flex items-center gap-2 shadow-xs"
                     >
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
                       <span>Xuất Bản mẫu / Tải Chỉ tiêu (.xlsx)</span>
                     </button>
 
-                    <label className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl cursor-pointer border border-indigo-500 transition text-xs font-black flex items-center gap-2">
+                    <label className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl cursor-pointer border border-indigo-600 transition text-xs font-black flex items-center gap-2 shadow-md shadow-indigo-100">
                       <Upload className="w-4 h-4 text-white" />
                       <span>Up Chỉ Tiêu Excel (Nạp File)</span>
                       <input 
@@ -3331,9 +3381,9 @@ const App: React.FC = () => {
                             setCustomSubjectTargets({});
                           }
                         }}
-                        className="px-4 py-2.5 bg-rose-500/20 hover:bg-rose-500/35 text-rose-200 rounded-2xl border border-rose-500/20 transition text-xs font-black flex items-center gap-2"
+                        className="px-4 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-2xl border border-rose-150 transition text-xs font-black flex items-center gap-2"
                       >
-                        <RefreshCcw className="w-4 h-4" />
+                        <RefreshCcw className="w-4 h-4 text-rose-500" />
                         <span>Khôi phục Mặc định</span>
                       </button>
                     )}
@@ -3341,42 +3391,42 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Grid controls */}
-                <div className="mt-6 space-y-4">
+                <div className="mt-6 space-y-4 relative z-10">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-black text-indigo-200">
+                    <h4 className="text-sm font-black text-indigo-950">
                       Danh sách chỉ tiêu bộ môn hiện hành ({uniqueSubjectsInSystem.length} môn & phân môn)
                     </h4>
-                    <span className="text-[10px] text-slate-400 font-bold italic">
+                    <span className="text-[10px] text-slate-500 font-bold italic">
                       * Nhập trực tiếp chỉ số mới để cập nhật nhanh, hệ thống tự lưu
                     </span>
                   </div>
 
-                  <div className="overflow-x-auto max-h-[350px] overflow-y-auto rounded-3xl border border-white/5 bg-slate-950/40 backdrop-blur-md">
+                  <div className="overflow-x-auto max-h-[350px] overflow-y-auto rounded-3xl border border-slate-200 bg-white">
                     <table className="w-full text-left text-xs border-collapse">
-                      <thead className="bg-slate-900/80 sticky top-0 border-b border-white/5 select-none text-[10px] uppercase font-black tracking-widest text-indigo-300">
+                      <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 select-none text-[10px] uppercase font-black tracking-widest text-slate-700 keep-white">
                         <tr>
-                          <th className="px-5 py-3">Môn học / Hoạt động GD</th>
-                          <th className="px-5 py-3 text-center">Trạng thái</th>
-                          <th className="px-5 py-3 text-center">Yêu cầu tỷ lệ Đạt (≥ 5.0) (%)</th>
-                          <th className="px-5 py-3 text-center">Tỷ lệ Khá + Giỏi đạt Xuất sắc (HTXSNV) (%)</th>
-                          <th className="px-5 py-3 text-center">Tỷ lệ Khá + Giỏi đạt Tốt (HTT) (%)</th>
-                          <th className="px-5 py-3 text-center">Tỷ lệ Khá + Giỏi đạt Nhiệm vụ (HTNV) (%)</th>
+                          <th className="px-5 py-3 text-slate-700">Môn học / Hoạt động GD</th>
+                          <th className="px-5 py-3 text-center text-slate-700">Trạng thái</th>
+                          <th className="px-5 py-3 text-center text-slate-700">Yêu cầu tỷ lệ Đạt (≥ 5.0) (%)</th>
+                          <th className="px-5 py-3 text-center text-slate-700">Tỷ lệ Khá + Giỏi đạt Xuất sắc (HTXSNV) (%)</th>
+                          <th className="px-5 py-3 text-center text-slate-700">Tỷ lệ Khá + Giỏi đạt Tốt (HTT) (%)</th>
+                          <th className="px-5 py-3 text-center text-slate-700">Tỷ lệ Khá + Giỏi đạt Nhiệm vụ (HTNV) (%)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5 font-semibold text-slate-300">
+                      <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                         {uniqueSubjectsInSystem.map(subj => {
                           const t = getTargetForSubject(subj);
                           const isCustom = !!customSubjectTargets[subj];
                           return (
-                            <tr key={subj} className="hover:bg-white/5 transition">
-                              <td className="px-5 py-3 font-extrabold text-white">
+                            <tr key={subj} className="hover:bg-slate-50/70 transition">
+                              <td className="px-5 py-3 font-extrabold text-slate-800">
                                 {subj}
                               </td>
                               <td className="px-5 py-3 text-center">
                                 {isCustom ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Tùy biến</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">Tùy biến</span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Mặc định</span>
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">Mặc định</span>
                                 )}
                               </td>
                               <td className="px-5 py-3">
@@ -3387,7 +3437,7 @@ const App: React.FC = () => {
                                     max="100"
                                     value={t.passRateReq}
                                     onChange={(e) => updateSubjectTarget(subj, 'passRateReq', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                    className="w-20 px-2 py-1 text-center bg-slate-50 border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 focus:outline-none text-slate-800 select-all font-black text-xs transition"
                                   />
                                 </div>
                               </td>
@@ -3399,7 +3449,7 @@ const App: React.FC = () => {
                                     max="100"
                                     value={t.htxsnvRate}
                                     onChange={(e) => updateSubjectTarget(subj, 'htxsnvRate', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                    className="w-20 px-2 py-1 text-center bg-slate-50 border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 focus:outline-none text-slate-800 select-all font-black text-xs transition"
                                   />
                                 </div>
                               </td>
@@ -3411,7 +3461,7 @@ const App: React.FC = () => {
                                     max="100"
                                     value={t.httRate}
                                     onChange={(e) => updateSubjectTarget(subj, 'httRate', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                    className="w-20 px-2 py-1 text-center bg-slate-50 border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 focus:outline-none text-slate-800 select-all font-black text-xs transition"
                                   />
                                 </div>
                               </td>
@@ -3423,7 +3473,7 @@ const App: React.FC = () => {
                                     max="100"
                                     value={t.htnvRate}
                                     onChange={(e) => updateSubjectTarget(subj, 'htnvRate', Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
-                                    className="w-20 px-2 py-1 text-center bg-slate-900 border border-white/10 rounded-lg focus:border-indigo-400 focus:outline-none text-white select-all font-black text-xs"
+                                    className="w-20 px-2 py-1 text-center bg-slate-50 border border-slate-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 focus:outline-none text-slate-800 select-all font-black text-xs transition"
                                   />
                                 </div>
                               </td>
@@ -3467,40 +3517,7 @@ const App: React.FC = () => {
                       </thead>
                       <tbody className="divide-y divide-slate-50 text-xs text-slate-700">
                         {teacherPerformanceStats.sort((a,b) => b.overallSubjectGpa - a.overallSubjectGpa).map((tc, idx) => {
-                          const hasSubject = tc.subjectMetrics.length > 0;
-                          
-                          let remark = "Tham gia giữ vai trò sư phạm hỗ trợ lớp học.";
-                          let remarkColor = "text-slate-500 bg-slate-50";
-
-                          if (hasSubject) {
-                            if (tc.overallSubjectGpa >= 8.0 && tc.overallSubjectGoodAndFairRate >= 80) {
-                              remark = "Dạy học xuất sắc! Chất lượng đồng đều, tỉ lệ bứt phá cao.";
-                              remarkColor = "text-emerald-700 bg-emerald-50 border border-emerald-100/50";
-                            } else if (tc.overallSubjectGpa >= 6.5 && tc.overallSubjectRiskRate < 15) {
-                              remark = "Chất lượng dạy học đại trà tốt, giữ lớp ổn định, ít có học sinh nguy cơ.";
-                              remarkColor = "text-indigo-700 bg-indigo-50 border border-indigo-100/50";
-                            } else if (tc.overallSubjectRiskRate >= 25 || tc.overallSubjectGpa < 5.0) {
-                              remark = "Kiểm soát an toàn chưa tốt. Giáo viên bộ môn cần họp cùng GVCN để phụ đạo và kèm cặp thêm.";
-                              remarkColor = "text-rose-700 bg-rose-50 border border-rose-100/50";
-                            } else {
-                              remark = "Năng lực ổn định, đáp ứng tốt khung chuẩn chương trình môn học.";
-                              remarkColor = "text-amber-700 bg-amber-50 border border-amber-100/50";
-                            }
-                          } else if (tc.gvcnMetrics.length > 0) {
-                            const mainClass = tc.gvcnMetrics[0];
-                            if (mainClass.gpa >= 7.8) {
-                              remark = "Chủ nhiệm xuất sắc! Tập thể đoàn kết, tự học cao, tỷ lệ khá giỏi cao.";
-                              remarkColor = "text-emerald-700 bg-emerald-50 border border-emerald-100/50";
-                            } else if (mainClass.riskRate > 25) {
-                              remark = "Lớp có nhiều yếu tố rủi ro rèn luyện. Cần phối hợp giáo viên bộ môn tăng cường giám sát.";
-                              remarkColor = "text-rose-700 bg-rose-50 border border-rose-100/50";
-                            } else {
-                              remark = "Lớp chủ nhiệm hoạt động nề nếp, kết quả chuyển giao học tập tương đối ổn định.";
-                              remarkColor = "text-slate-700 bg-slate-50 border border-slate-100";
-                            }
-                          }
-
-                          // Construct roles list
+                          // Construct roles list first to analyze evaluation distribution
                           const roles = [
                             ...tc.gvcnClasses.map(cls => {
                               const metric = tc.gvcnMetrics.find(m => m.className === cls);
@@ -3511,6 +3528,64 @@ const App: React.FC = () => {
                               return { type: 'Subject' as const, name: sc.className, displayName: `📚 ${sc.subjectName} (${sc.className})`, metric };
                             })
                           ];
+
+                          const assignedRoles = roles.filter(r => r.metric);
+                          
+                          let remark = "Tham gia giữ vai trò sư phạm hỗ trợ lớp học.";
+                          let remarkColor = "text-slate-500 bg-slate-50 border border-slate-100";
+
+                          if (assignedRoles.length > 0) {
+                            const totalRoles = assignedRoles.length;
+                            const htxsnv = assignedRoles.filter(r => r.metric?.principalRating.includes("HTXSNV")).length;
+                            const htt = assignedRoles.filter(r => r.metric?.principalRating.includes("HTT")).length;
+                            const htnv = assignedRoles.filter(r => r.metric?.principalRating.includes("HTNV") && !r.metric?.principalRating.includes("KHTNV")).length;
+                            const khtnv = assignedRoles.filter(r => r.metric?.principalRating.includes("KHT") || r.metric?.principalRating.includes("Không")).length;
+
+                            const totalRiskStudents = assignedRoles.reduce((sum, r) => sum + (r.metric?.riskCount || 0), 0);
+                            const averageGpa = assignedRoles.reduce((sum, r) => sum + (r.metric?.gpa || 0), 0) / totalRoles;
+
+                            if (khtnv > 0) {
+                              remarkColor = "text-rose-700 bg-rose-50 border border-rose-100";
+                              if (khtnv === totalRoles) {
+                                remark = `Cần lưu ý đặc biệt: Toàn bộ ${totalRoles} lớp giảng dạy và chủ nhiệm đều chưa đạt chỉ tiêu (KHTNV). Cần rà soát nguyên nhân, đổi mới phương pháp truyền đạt và tăng cường phụ đạo gấp cho ${totalRiskStudents} học sinh có nguy cơ yếu kém.`;
+                              } else {
+                                remark = `Cảnh báo phối hợp: Có ${khtnv}/${totalRoles} hoạt động thuộc nhiệm vụ chưa đạt chỉ tiêu chất lượng. Giáo viên cần tập trung cải thiện kết quả ở những lớp chưa đạt, phối hợp với ban giám hiệu và gia đình để hỗ trợ bổ trợ kịp thời cho học sinh yếu cá biệt.`;
+                              }
+                            } else if (htxsnv === totalRoles) {
+                              remarkColor = "text-emerald-700 bg-emerald-50 border border-emerald-100";
+                              remark = `Đạt kết quả xuất sắc toàn diện! Cả ${totalRoles}/${totalRoles} lớp giảng dạy & chủ nhiệm đều xuất sắc Hoàn thành Xuất sắc Nhiệm vụ (HTXSNV). Chất lượng giáo dục đỉnh cao, tỷ lệ khá giỏi bứt phá, nề nếp kỷ cương được giữ vững tuyệt đối.`;
+                            } else if (htxsnv + htt === totalRoles) {
+                              remarkColor = "text-indigo-700 bg-indigo-50 border border-indigo-100";
+                              if (htxsnv > htt) {
+                                remark = `Chuyên môn xuất sắc và đồng đều: Đạt chỉ tiêu Xuất sắc tại ${htxsnv}/${totalRoles} lớp và Tốt tại ${htt}/${totalRoles} lớp. Giáo viên phát huy tối đa năng lực sư phạm, lớp học đạt mặt bằng điểm số rất cao (TB ~${averageGpa.toFixed(2)}), khơi dậy tinh thần tự học.`;
+                              } else {
+                                remark = `Chất lượng dạy và học rất cao: Đạt chỉ tiêu Tốt ở ${htt}/${totalRoles} lớp và Xuất sắc ở ${htxsnv}/${totalRoles} lớp. Giữ vững mặt bằng kiến thức vững chắc nhóm trên, đồng thời kiểm soát cực tốt an toàn sư phạm (${totalRiskStudents} học sinh rủi ro).`;
+                              }
+                            } else if (htnv === totalRoles) {
+                              remarkColor = "text-amber-700 bg-amber-50 border border-amber-100";
+                              remark = `Hoàn thành tốt nhiệm vụ đại trà: Đạt chỉ tiêu Đạt (HTNV) ở cả ${totalRoles}/${totalRoles} lớp. Học sinh cơ bản nắm vững kiến thức trọng tâm của chương trình. Giáo viên nên đầu tư thêm giải pháp để nâng cao tỷ lệ khá giỏi tại các kỳ đánh giá sau.`;
+                            } else {
+                              remarkColor = "text-indigo-750 bg-indigo-50/70 border border-indigo-150/70";
+                              let detailParts = [];
+                              if (htxsnv > 0) detailParts.push(`${htxsnv} lớp Xuất sắc (HTXSNV)`);
+                              if (htt > 0) detailParts.push(`${htt} lớp Tốt (HTT)`);
+                              if (htnv > 0) detailParts.push(`${htnv} lớp Đạt (HTNV)`);
+                              const detailsStr = detailParts.join(", ");
+                              remark = `Năng lực sư phạm linh hoạt, cơ bản bao quát tốt: Kết quả đạt được gồm ${detailsStr}. Kiểm soát rủi ro an toàn sư phạm ở mức ổn định (chỉ có ${totalRiskStudents} học sinh có nguy cơ). Ban Giám hiệu đề xuất giáo viên tiếp tục phát huy để hoàn thành xuất sắc các mục tiêu chung học kỳ tới.`;
+                            }
+                          } else if (tc.gvcnMetrics.length > 0) {
+                            const mainClass = tc.gvcnMetrics[0];
+                            if (mainClass.gpa >= 7.8) {
+                              remark = "Chủ nhiệm xuất sắc! Tập thể đoàn kết, tự học cao, tỷ lệ khá giỏi cao.";
+                              remarkColor = "text-emerald-700 bg-emerald-50 border border-emerald-100";
+                            } else if (mainClass.riskRate > 25) {
+                              remark = "Lớp có nhiều yếu tố rủi ro rèn luyện. Cần phối hợp giáo viên bộ môn tăng cường giám sát.";
+                              remarkColor = "text-rose-700 bg-rose-50 border border-rose-100";
+                            } else {
+                              remark = "Lớp chủ nhiệm hoạt động nề nếp, kết quả chuyển giao học tập tương đối ổn định.";
+                              remarkColor = "text-slate-755 bg-slate-50 border border-slate-100";
+                            }
+                          }
 
                           return (
                             <tr key={tc.name} className="hover:bg-indigo-50/10 transition-all font-sans font-semibold text-slate-700">
